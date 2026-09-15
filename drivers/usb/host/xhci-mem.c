@@ -783,9 +783,9 @@ void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
 		if (port_num > 15)
 			port_num = 15;
 		route |= port_num << (hub->hub_depth * 4);
-		dev = dev_get_parent_priv(dev->dev);
+		dev = usb_get_device(dev->dev);
 		port_num = dev->portnr;
-		dev = dev_get_parent_priv(dev->dev->parent);
+		dev = usb_get_device(dev->dev->parent);
 	}
 
 	debug("route string %x\n", route);
@@ -818,7 +818,7 @@ void xhci_setup_addressable_virt_dev(struct xhci_ctrl *ctrl,
 		dev = udev;
 		do {
 			port_num = dev->portnr;
-			dev = dev_get_parent_priv(parent);
+			dev = usb_get_device(parent);
 			if (usb_hub_is_root_hub(dev->dev))
 				break;
 			parent = dev->dev->parent;
