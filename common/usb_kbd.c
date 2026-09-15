@@ -173,13 +173,13 @@ static void usb_kbd_put_queue(struct usb_kbd_pdata *data, u8 c)
 static void usb_kbd_setled(struct usb_device *dev)
 {
 	struct usb_kbd_pdata *data = dev->privptr;
-	struct usb_interface *iface = &dev->config.if_desc[data->ifnum];
+	struct usb_interface *iface = usb_get_interface(dev, data->ifnum);
 	ALLOC_ALIGN_BUFFER(uint32_t, leds, 1, USB_DMA_MINALIGN);
 
 	*leds = data->flags & USB_KBD_LEDMASK;
 	usb_control_msg(dev, usb_sndctrlpipe(dev, 0),
 		USB_REQ_SET_REPORT, USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-		0x200, iface->desc.bInterfaceNumber, leds, 1, 0);
+		0x200, usb_get_interface_desc(iface)->bInterfaceNumber, leds, 1, 0);
 }
 
 #define CAPITAL_MASK	0x20
@@ -387,8 +387,8 @@ static inline void usb_kbd_poll_for_event(struct usb_device *dev)
 #if defined(CONFIG_SYS_USB_EVENT_POLL_VIA_CONTROL_EP)
 	struct usb_interface *iface;
 	struct usb_kbd_pdata *data = dev->privptr;
-	iface = &dev->config.if_desc[data->ifnum];
-	usb_get_report(dev, iface->desc.bInterfaceNumber,
+	iface = usb_get_interface(dev, data->ifnum);
+	usb_get_report(dev, usb_get_interface_desc(iface)->bInterfaceNumber,
 		       1, 0, data->new, USB_KBD_BOOT_REPORT_SIZE);
 	if (memcmp(data->old, data->new, USB_KBD_BOOT_REPORT_SIZE)) {
 		usb_kbd_irq_worker(dev);
@@ -484,6 +484,7 @@ static int usb_kbd_getc(struct stdio_dev *sdev)
 static int usb_kbd_probe_dev(struct usb_device *dev, unsigned int ifnum)
 {
 	struct usb_interface *iface;
+	struct usb_interface_descriptor *desc;
 	struct usb_endpoint_descriptor *ep;
 	struct usb_kbd_pdata *data;
 	unsigned int quirks = 0;
@@ -492,19 +493,20 @@ static int usb_kbd_probe_dev(struct usb_device *dev, unsigned int ifnum)
 	if (dev->descriptor.bNumConfigurations != 1)
 		return 0;
 
-	iface = &dev->config.if_desc[ifnum];
+	iface = usb_get_interface(dev, ifnum);
+	desc = usb_get_interface_desc(iface);
 
-	if (iface->desc.bInterfaceClass != USB_CLASS_HID)
+	if (desc->bInterfaceClass != USB_CLASS_HID)
 		return 0;
 
-	if (iface->desc.bInterfaceSubClass != USB_SUB_HID_BOOT)
+	if (desc->bInterfaceSubClass != USB_SUB_HID_BOOT)
 		return 0;
 
-	if (iface->desc.bInterfaceProtocol != USB_PROT_HID_KEYBOARD)
+	if (desc->bInterfaceProtocol != USB_PROT_HID_KEYBOARD)
 		return 0;
 
-	for (epNum = 0; epNum < iface->desc.bNumEndpoints; epNum++) {
-		ep = &iface->ep_desc[epNum];
+	for (epNum = 0; epNum < desc->bNumEndpoints; epNum++) {
+		ep = usb_get_endpoint_desc(iface, epNum);
 
 		/* Check if endpoint is interrupt IN endpoint */
 		if ((ep->bmAttributes & 3) != 3)
@@ -514,7 +516,7 @@ static int usb_kbd_probe_dev(struct usb_device *dev, unsigned int ifnum)
 			break;
 	}
 
-	if (epNum == iface->desc.bNumEndpoints)
+	if (epNum == desc->bNumEndpoints)
 		return 0;
 
 	debug("USB KBD: found interrupt EP: 0x%x\n", ep->bEndpointAddress);
@@ -557,15 +559,15 @@ static int usb_kbd_probe_dev(struct usb_device *dev, unsigned int ifnum)
 
 	/* We found a USB Keyboard, install it. */
 	debug("USB KBD: set boot protocol\n");
-	usb_set_protocol(dev, iface->desc.bInterfaceNumber, 0);
+	usb_set_protocol(dev, desc->bInterfaceNumber, 0);
 
 #if !defined(CONFIG_SYS_USB_EVENT_POLL_VIA_CONTROL_EP) && \
     !defined(CONFIG_SYS_USB_EVENT_POLL_VIA_INT_QUEUE)
 	debug("USB KBD: set idle interval...\n");
-	usb_set_idle(dev, iface->desc.bInterfaceNumber, REPEAT_RATE / 4, 0);
+	usb_set_idle(dev, desc->bInterfaceNumber, REPEAT_RATE / 4, 0);
 #else
 	debug("USB KBD: set idle interval=0...\n");
-	usb_set_idle(dev, iface->desc.bInterfaceNumber, 0, 0);
+	usb_set_idle(dev, desc->bInterfaceNumber, 0, 0);
 #endif
 
 	/*
@@ -583,7 +585,7 @@ static int usb_kbd_probe_dev(struct usb_device *dev, unsigned int ifnum)
 				      data->intinterval);
 	if (!data->intq) {
 #elif defined(CONFIG_SYS_USB_EVENT_POLL_VIA_CONTROL_EP)
-	if (usb_get_report(dev, iface->desc.bInterfaceNumber,
+	if (usb_get_report(dev, desc->bInterfaceNumber,
 			   1, 0, data->new, USB_KBD_BOOT_REPORT_SIZE) < 0) {
 #else
 	if (usb_int_msg(dev, data->intpipe, data->new, data->intpktsize,
@@ -653,14 +655,14 @@ static int probe_usb_keyboard(struct usb_device *dev)
 
 static int usb_kbd_probe(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 
 	return probe_usb_keyboard(udev);
 }
 
 static int usb_kbd_remove(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct usb_kbd_pdata *data;
 	struct stdio_dev *sdev;
 	int ret;

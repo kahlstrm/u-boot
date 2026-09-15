@@ -1160,7 +1160,7 @@ static unsigned long usb_stor_read(struct blk_desc *block_dev, lbaint_t blknr,
 	/* Setup  device */
 #if CONFIG_IS_ENABLED(BLK)
 	block_dev = dev_get_uclass_plat(dev);
-	udev = dev_get_parent_priv(dev_get_parent(dev));
+	udev = usb_get_device(dev_get_parent(dev));
 	debug("\nusb_read: udev %d\n", block_dev->devnum);
 #else
 	debug("\nusb_read: udev %d\n", block_dev->devnum);
@@ -1244,7 +1244,7 @@ static unsigned long usb_stor_write(struct blk_desc *block_dev, lbaint_t blknr,
 	/* Setup  device */
 #if CONFIG_IS_ENABLED(BLK)
 	block_dev = dev_get_uclass_plat(dev);
-	udev = dev_get_parent_priv(dev_get_parent(dev));
+	udev = usb_get_device(dev_get_parent(dev));
 	debug("\nusb_read: udev %d\n", block_dev->devnum);
 #else
 	debug("\nusb_read: udev %d\n", block_dev->devnum);
@@ -1312,17 +1312,19 @@ int usb_storage_probe(struct usb_device *dev, unsigned int ifnum,
 		      struct us_data *ss)
 {
 	struct usb_interface *iface;
+	struct usb_interface_descriptor *desc;
 	int i;
 	struct usb_endpoint_descriptor *ep_desc;
 	unsigned int flags = 0;
 
 	/* let's examine the device now */
-	iface = &dev->config.if_desc[ifnum];
+	iface = usb_get_interface(dev, ifnum);
+	desc = usb_get_interface_desc(iface);
 
 	if (dev->descriptor.bDeviceClass != 0 ||
-			iface->desc.bInterfaceClass != USB_CLASS_MASS_STORAGE ||
-			iface->desc.bInterfaceSubClass < US_SC_MIN ||
-			iface->desc.bInterfaceSubClass > US_SC_MAX) {
+			desc->bInterfaceClass != USB_CLASS_MASS_STORAGE ||
+			desc->bInterfaceSubClass < US_SC_MIN ||
+			desc->bInterfaceSubClass > US_SC_MAX) {
 		debug("Not mass storage\n");
 		/* if it's not a mass storage, we go no further */
 		return 0;
@@ -1338,8 +1340,8 @@ int usb_storage_probe(struct usb_device *dev, unsigned int ifnum,
 	ss->ifnum = ifnum;
 	ss->pusb_dev = dev;
 	ss->attention_done = 0;
-	ss->subclass = iface->desc.bInterfaceSubClass;
-	ss->protocol = iface->desc.bInterfaceProtocol;
+	ss->subclass = desc->bInterfaceSubClass;
+	ss->protocol = desc->bInterfaceProtocol;
 
 	/* set the handler pointers based on the protocol */
 	debug("Transport: ");
@@ -1371,8 +1373,8 @@ int usb_storage_probe(struct usb_device *dev, unsigned int ifnum,
 	 * An optional interrupt is OK (necessary for CBI protocol).
 	 * We will ignore any others.
 	 */
-	for (i = 0; i < iface->desc.bNumEndpoints; i++) {
-		ep_desc = &iface->ep_desc[i];
+	for (i = 0; i < desc->bNumEndpoints; i++) {
+		ep_desc = usb_get_endpoint_desc(iface, i);
 		/* is it an BULK endpoint? */
 		if ((ep_desc->bmAttributes &
 		     USB_ENDPOINT_XFERTYPE_MASK) == USB_ENDPOINT_XFER_BULK) {
@@ -1397,7 +1399,7 @@ int usb_storage_probe(struct usb_device *dev, unsigned int ifnum,
 	      ss->ep_in, ss->ep_out, ss->ep_int);
 
 	/* Do some basic sanity checks, and bail if we find a problem */
-	if (usb_set_interface(dev, iface->desc.bInterfaceNumber, 0) ||
+	if (usb_set_interface(dev, desc->bInterfaceNumber, 0) ||
 	    !ss->ep_in || !ss->ep_out ||
 	    (ss->protocol == US_PR_CBI && ss->ep_int == 0)) {
 		debug("Problems with device\n");
@@ -1525,7 +1527,7 @@ int usb_stor_get_info(struct usb_device *dev, struct us_data *ss,
 
 static int usb_mass_storage_probe(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	int ret;
 
 	usb_disable_asynch(1); /* asynch transfer not allowed */
