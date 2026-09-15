@@ -746,7 +746,7 @@ int usb_scan_device(struct udevice *parent, int port,
 	struct usb_device *parent_udev;
 	int ret;
 	ALLOC_CACHE_ALIGN_BUFFER(struct usb_device, udev, 1);
-	struct usb_interface_descriptor *iface = &udev->config.if_desc[0].desc;
+	struct usb_interface_descriptor *iface;
 
 	*devp = NULL;
 	memset(udev, '\0', sizeof(*udev));
@@ -787,11 +787,12 @@ int usb_scan_device(struct udevice *parent, int port,
 	udev->portnr = port;
 	debug("Calling usb_setup_device(), portnr=%d\n", udev->portnr);
 	parent_udev = device_get_uclass_id(parent) == UCLASS_USB_HUB ?
-		dev_get_parent_priv(parent) : NULL;
+		usb_get_device(parent) : NULL;
 	ret = usb_setup_device(udev, priv->desc_before_addr, parent_udev);
 	debug("read_descriptor for '%s': ret=%d\n", parent->name, ret);
 	if (ret)
 		return ret;
+	iface = usb_get_interface_desc(usb_get_interface(udev, 0));
 	ret = usb_find_child(parent, &udev->descriptor, iface, &dev);
 	debug("** usb_find_child returns %d\n", ret);
 	if (ret) {
@@ -851,7 +852,7 @@ int usb_detect_change(void)
 			if (!device_active(dev))
 				continue;
 
-			udev = dev_get_parent_priv(dev);
+			udev = usb_get_device(dev);
 			if (usb_get_port_status(udev, udev->portnr, &status)
 					< 0)
 				/* USB request failed */
