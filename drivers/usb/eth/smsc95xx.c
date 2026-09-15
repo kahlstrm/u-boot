@@ -701,7 +701,7 @@ static int smsc95xx_send_common(struct ueth_data *dev, void *packet, int length)
 
 static int smsc95xx_eth_start(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct smsc95xx_private *priv = dev_get_priv(dev);
 	struct eth_pdata *pdata = dev_get_plat(dev);
 
@@ -785,7 +785,7 @@ static int smsc95xx_free_pkt(struct udevice *dev, uchar *packet, int packet_len)
 
 int smsc95xx_write_hwaddr(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct eth_pdata *pdata = dev_get_plat(dev);
 	struct smsc95xx_private *priv = dev_get_priv(dev);
 
@@ -794,7 +794,7 @@ int smsc95xx_write_hwaddr(struct udevice *dev)
 
 int smsc95xx_read_rom_hwaddr(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct eth_pdata *pdata = dev_get_plat(dev);
 	int ret;
 
