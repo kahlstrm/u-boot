@@ -5,6 +5,7 @@
 
 #include <console.h>
 #include <dm.h>
+#include <memalign.h>
 #include <part.h>
 #include <usb.h>
 #include <asm/io.h>
@@ -21,6 +22,67 @@ struct keyboard_test_data {
 	const char scancode;
 	const char result[6];
 };
+
+static int dm_test_usb_descriptor_accessors(struct unit_test_state *uts)
+{
+	ALLOC_CACHE_ALIGN_BUFFER(struct usb_device, devices, 2);
+	struct usb_interface *iface, *copy;
+	unsigned int i, ep;
+
+	memset(devices, 0, 2 * sizeof(*devices));
+	devices[0].config.no_of_if = USB_MAXINTERFACES;
+	for (i = 0; i < USB_MAXINTERFACES; i++) {
+		iface = usb_get_interface(&devices[0], i);
+		ut_asserteq_ptr(&devices[0].config.if_desc[i], iface);
+		iface->desc.bInterfaceNumber = i + 1;
+		iface->no_of_ep = USB_MAXENDPOINTS;
+		ut_asserteq_ptr(&iface->desc, usb_get_interface_desc(iface));
+		ut_asserteq(i + 1,
+			    usb_get_interface_desc(iface)->bInterfaceNumber);
+		for (ep = 0; ep < USB_MAXENDPOINTS; ep++) {
+			ut_asserteq_ptr(&iface->ep_desc[ep],
+					usb_get_endpoint_desc(iface, ep));
+			ut_asserteq_ptr(&iface->ss_ep_comp_desc[ep],
+					usb_get_ss_ep_comp_desc(iface, ep));
+		}
+	}
+
+	devices[1] = devices[0];
+	iface = usb_get_interface(&devices[0], USB_MAXINTERFACES - 1);
+	copy = usb_get_interface(&devices[1], USB_MAXINTERFACES - 1);
+	usb_get_interface_desc(copy)->bInterfaceNumber = 42;
+	usb_get_endpoint_desc(copy, USB_MAXENDPOINTS - 1)->bInterval = 7;
+	usb_get_ss_ep_comp_desc(copy, USB_MAXENDPOINTS - 1)->bMaxBurst = 3;
+	ut_asserteq(USB_MAXINTERFACES, iface->desc.bInterfaceNumber);
+	ut_asserteq(0, iface->ep_desc[USB_MAXENDPOINTS - 1].bInterval);
+	ut_asserteq(0, iface->ss_ep_comp_desc[USB_MAXENDPOINTS - 1].bMaxBurst);
+	ut_asserteq(42, copy->desc.bInterfaceNumber);
+	ut_asserteq(7, copy->ep_desc[USB_MAXENDPOINTS - 1].bInterval);
+	ut_asserteq(3, copy->ss_ep_comp_desc[USB_MAXENDPOINTS - 1].bMaxBurst);
+
+	return 0;
+}
+
+DM_TEST(dm_test_usb_descriptor_accessors, 0);
+
+static int dm_test_usb_device_accessor(struct unit_test_state *uts)
+{
+	struct udevice *dev;
+
+	state_set_skip_delays(true);
+	ut_assertok(usb_init());
+	ut_assertok(uclass_get_device(UCLASS_MASS_STORAGE, 0, &dev));
+	ut_assertnonnull(usb_get_device(dev));
+	ut_asserteq_ptr(dev_get_parent_priv(dev), usb_get_device(dev));
+	ut_assertok(uclass_get_device(UCLASS_USB_HUB, 0, &dev));
+	ut_assertnonnull(usb_get_device(dev));
+	ut_asserteq_ptr(dev_get_parent_priv(dev), usb_get_device(dev));
+	ut_assertok(usb_stop());
+
+	return 0;
+}
+
+DM_TEST(dm_test_usb_device_accessor, UTF_SCAN_PDATA | UTF_SCAN_FDT);
 
 /* Test that sandbox USB works correctly */
 static int dm_test_usb_base(struct unit_test_state *uts)
