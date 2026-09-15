@@ -5,9 +5,11 @@
 
 #include <console.h>
 #include <dm.h>
+#include <malloc.h>
 #include <memalign.h>
 #include <part.h>
 #include <usb.h>
+#include <usb_ether.h>
 #include <asm/io.h>
 #include <asm/state.h>
 #include <asm/test.h>
@@ -86,6 +88,52 @@ static int dm_test_usb_device_accessor(struct unit_test_state *uts)
 }
 
 DM_TEST(dm_test_usb_device_accessor, UTF_SCAN_PDATA | UTF_SCAN_FDT);
+
+#if CONFIG_IS_ENABLED(USB_HOST_ETHER)
+static int dm_test_usb_ether_endpoints(struct unit_test_state *uts)
+{
+	struct ueth_data ueth = {};
+	struct usb_interface saved, *iface;
+	struct usb_device *udev;
+	struct udevice *dev;
+	int ret;
+
+	state_set_skip_delays(true);
+	ut_assertok(usb_init());
+	ut_assertok(uclass_get_device(UCLASS_MASS_STORAGE, 0, &dev));
+	udev = usb_get_device(dev);
+	iface = usb_get_interface(udev, 0);
+	saved = *iface;
+	/* Supply Ethernet-shaped descriptors without emulating network traffic. */
+	memset(iface, 0, sizeof(*iface));
+	iface->desc.bNumEndpoints = 3;
+	iface->num_altsetting = 1;
+	iface->no_of_ep = 3;
+	iface->ep_desc[0].bEndpointAddress = USB_DIR_IN | 3;
+	iface->ep_desc[0].bmAttributes = USB_ENDPOINT_XFER_INT;
+	iface->ep_desc[0].bInterval = 7;
+	iface->ep_desc[1].bEndpointAddress = 2;
+	iface->ep_desc[1].bmAttributes = USB_ENDPOINT_XFER_BULK;
+	iface->ep_desc[2].bEndpointAddress = USB_DIR_IN | 1;
+	iface->ep_desc[2].bmAttributes = USB_ENDPOINT_XFER_BULK;
+	ret = usb_ether_register(dev, &ueth, 512);
+	*iface = saved;
+	free(ueth.rxbuf);
+	ueth.rxbuf = NULL;
+	ut_assertok(ret);
+	ut_asserteq(0, ueth.ifnum);
+	ut_asserteq(1, ueth.ep_in);
+	ut_asserteq(2, ueth.ep_out);
+	ut_asserteq(3, ueth.ep_int);
+	ut_asserteq(7, ueth.irqinterval);
+	ut_asserteq_ptr(udev, ueth.pusb_dev);
+	ut_assertok(usb_stop());
+
+	return 0;
+}
+
+DM_TEST(dm_test_usb_ether_endpoints, UTF_SCAN_PDATA | UTF_SCAN_FDT);
+#endif
 
 /* Test that sandbox USB works correctly */
 static int dm_test_usb_base(struct unit_test_state *uts)

@@ -18,15 +18,15 @@
 
 int usb_ether_register(struct udevice *dev, struct ueth_data *ueth, int rxsize)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct usb_interface_descriptor *iface_desc;
 	bool ep_in_found = false, ep_out_found = false;
 	struct usb_interface *iface;
 	const int ifnum = 0; /* Always use interface 0 */
 	int ret, i;
 
-	iface = &udev->config.if_desc[ifnum];
-	iface_desc = &udev->config.if_desc[ifnum].desc;
+	iface = usb_get_interface(udev, ifnum);
+	iface_desc = usb_get_interface_desc(iface);
 
 	/* Initialize the ueth_data structure with some useful info */
 	ueth->ifnum = ifnum;
@@ -38,10 +38,11 @@ int usb_ether_register(struct udevice *dev, struct ueth_data *ueth, int rxsize)
 	 * We will ignore any others.
 	 */
 	for (i = 0; i < iface_desc->bNumEndpoints; i++) {
-		int ep_addr = iface->ep_desc[i].bEndpointAddress;
+		struct usb_endpoint_descriptor *ep = usb_get_endpoint_desc(iface, i);
+		int ep_addr = ep->bEndpointAddress;
 
 		/* is it an BULK endpoint? */
-		if ((iface->ep_desc[i].bmAttributes &
+		if ((ep->bmAttributes &
 		     USB_ENDPOINT_XFERTYPE_MASK) == USB_ENDPOINT_XFER_BULK) {
 			if (ep_addr & USB_DIR_IN && !ep_in_found) {
 				ueth->ep_in = ep_addr &
@@ -55,11 +56,11 @@ int usb_ether_register(struct udevice *dev, struct ueth_data *ueth, int rxsize)
 		}
 
 		/* is it an interrupt endpoint? */
-		if ((iface->ep_desc[i].bmAttributes &
+		if ((ep->bmAttributes &
 		    USB_ENDPOINT_XFERTYPE_MASK) == USB_ENDPOINT_XFER_INT) {
-			ueth->ep_int = iface->ep_desc[i].bEndpointAddress &
+			ueth->ep_int = ep->bEndpointAddress &
 				USB_ENDPOINT_NUMBER_MASK;
-			ueth->irqinterval = iface->ep_desc[i].bInterval;
+			ueth->irqinterval = ep->bInterval;
 		}
 	}
 	debug("Endpoints In %d Out %d Int %d\n", ueth->ep_in, ueth->ep_out,
