@@ -166,6 +166,34 @@ struct usb_device {
 struct int_queue;
 
 /*
+ * Indices below refer to parsed array entries, not USB descriptor numbers.
+ * Callers must validate indices against the corresponding parsed counts.
+ */
+static inline struct usb_interface *
+usb_get_interface(struct usb_device *dev, unsigned int index)
+{
+	return &dev->config.if_desc[index];
+}
+
+static inline struct usb_interface_descriptor *
+usb_get_interface_desc(struct usb_interface *iface)
+{
+	return &iface->desc;
+}
+
+static inline struct usb_endpoint_descriptor *
+usb_get_endpoint_desc(struct usb_interface *iface, unsigned int index)
+{
+	return &iface->ep_desc[index];
+}
+
+static inline struct usb_ss_ep_comp_descriptor *
+usb_get_ss_ep_comp_desc(struct usb_interface *iface, unsigned int index)
+{
+	return &iface->ss_ep_comp_desc[index];
+}
+
+/*
  * You can initialize platform's USB host or device
  * ports by passing this enum as an argument to
  * board_usb_init().
@@ -861,6 +889,13 @@ int usb_scan_device(struct udevice *parent, int port,
  *	the USB stack
  */
 struct udevice *usb_get_bus(struct udevice *dev);
+
+/**
+ * usb_get_device() - Get USB state for a bound USB device
+ * @dev: USB device, not a controller or a function's block-device child
+ * Return: USB state allocated by the parent bus or hub for @dev
+ */
+struct usb_device *usb_get_device(struct udevice *dev);
 
 /**
  * usb_select_config() - Set up a device ready for use

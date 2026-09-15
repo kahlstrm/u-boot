@@ -26,6 +26,11 @@ struct usb_uclass_priv {
 	int companion_device_count;
 };
 
+struct usb_device *usb_get_device(struct udevice *dev)
+{
+	return dev_get_parent_priv(dev);
+}
+
 int usb_lock_async(struct usb_device *udev, int lock)
 {
 	struct udevice *bus = udev->controller_dev;
