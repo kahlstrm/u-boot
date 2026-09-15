@@ -1311,7 +1311,7 @@ static int xhci_submit_control_msg(struct udevice *dev, struct usb_device *udev,
 		} else {
 			while (!usb_hub_is_root_hub(hub->parent))
 				hub = hub->parent;
-			uhop = dev_get_parent_priv(hub);
+			uhop = usb_get_device(hub);
 			root_portnr = uhop->portnr;
 		}
 	}
