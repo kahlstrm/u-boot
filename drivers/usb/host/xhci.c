@@ -506,8 +506,8 @@ static int xhci_init_ep_contexts_if(struct usb_device *udev,
 		struct usb_endpoint_descriptor *endpt_desc = NULL;
 		struct usb_ss_ep_comp_descriptor *ss_ep_comp_desc = NULL;
 
-		endpt_desc = &ifdesc->ep_desc[cur_ep];
-		ss_ep_comp_desc = &ifdesc->ss_ep_comp_desc[cur_ep];
+		endpt_desc = usb_get_endpoint_desc(ifdesc, cur_ep);
+		ss_ep_comp_desc = usb_get_ss_ep_comp_desc(ifdesc, cur_ep);
 		trb_64 = 0;
 
 		/*
@@ -618,11 +618,11 @@ static int xhci_set_configuration(struct usb_device *udev)
 	ctrl_ctx->drop_flags = 0;
 
 	for (ifnum = 0; ifnum < max_ifnum; ifnum++) {
-		ifdesc = &udev->config.if_desc[ifnum];
+		ifdesc = usb_get_interface(udev, ifnum);
 		num_of_ep = ifdesc->no_of_ep;
 		/* EP_FLAG gives values 1 & 4 for EP1OUT and EP2IN */
 		for (cur_ep = 0; cur_ep < num_of_ep; cur_ep++) {
-			ep_flag = xhci_get_ep_index(&ifdesc->ep_desc[cur_ep]);
+			ep_flag = xhci_get_ep_index(usb_get_endpoint_desc(ifdesc, cur_ep));
 			ctrl_ctx->add_flags |= cpu_to_le32(1 << (ep_flag + 1));
 			if (max_ep_flag < ep_flag)
 				max_ep_flag = ep_flag;
@@ -641,7 +641,7 @@ static int xhci_set_configuration(struct usb_device *udev)
 
 	/* filling up ep contexts */
 	for (ifnum = 0; ifnum < max_ifnum; ifnum++) {
-		ifdesc = &udev->config.if_desc[ifnum];
+		ifdesc = usb_get_interface(udev, ifnum);
 		err = xhci_init_ep_contexts_if(udev, ctrl, virt_dev, ifdesc);
 		if (err < 0)
 			return err;
