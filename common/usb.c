@@ -328,7 +328,7 @@ usb_set_maxpacket_ep(struct usb_device *dev, int if_idx, int ep_idx)
 	struct usb_endpoint_descriptor *ep;
 	u16 ep_wMaxPacketSize;
 
-	ep = &dev->config.if_desc[if_idx].ep_desc[ep_idx];
+	ep = usb_get_endpoint_desc(usb_get_interface(dev, if_idx), ep_idx);
 
 	b = ep->bEndpointAddress & USB_ENDPOINT_NUMBER_MASK;
 	ep_wMaxPacketSize = get_unaligned(&ep->wMaxPacketSize);
@@ -366,9 +366,13 @@ static int usb_set_maxpacket(struct usb_device *dev)
 {
 	int i, ii;
 
-	for (i = 0; i < dev->config.desc.bNumInterfaces; i++)
-		for (ii = 0; ii < dev->config.if_desc[i].desc.bNumEndpoints; ii++)
+	for (i = 0; i < dev->config.desc.bNumInterfaces; i++) {
+		struct usb_interface *iface = usb_get_interface(dev, i);
+		struct usb_interface_descriptor *desc = usb_get_interface_desc(iface);
+
+		for (ii = 0; ii < desc->bNumEndpoints; ii++)
 			usb_set_maxpacket_ep(dev, i, ii);
+	}
 
 	return 0;
 }
@@ -651,8 +655,10 @@ int usb_set_interface(struct usb_device *dev, int interface, int alternate)
 	int ret, i;
 
 	for (i = 0; i < dev->config.desc.bNumInterfaces; i++) {
-		if (dev->config.if_desc[i].desc.bInterfaceNumber == interface) {
-			if_face = &dev->config.if_desc[i];
+		struct usb_interface *iface = usb_get_interface(dev, i);
+
+		if (usb_get_interface_desc(iface)->bInterfaceNumber == interface) {
+			if_face = iface;
 			break;
 		}
 	}
@@ -1343,7 +1349,7 @@ void usb_find_usb2_hub_address_port(struct usb_device *udev,
 	 */
 	ttdev = udev;
 	parent = udev->dev;
-	uparent = dev_get_parent_priv(parent);
+	uparent = usb_get_device(parent);
 
 	while (uparent->speed != USB_SPEED_HIGH) {
 		struct udevice *dev = parent;
@@ -1355,9 +1361,9 @@ void usb_find_usb2_hub_address_port(struct usb_device *udev,
 			return;
 		}
 
-		ttdev = dev_get_parent_priv(dev);
+		ttdev = usb_get_device(dev);
 		parent = dev->parent;
-		uparent = dev_get_parent_priv(parent);
+		uparent = usb_get_device(parent);
 	}
 	*hub_address = uparent->devnum;
 	*hub_port = ttdev->portnr;
