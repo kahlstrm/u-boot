@@ -887,21 +887,22 @@ static int usb_hub_configure(struct usb_device *dev)
 static int usb_hub_check(struct usb_device *dev, int ifnum)
 {
 	struct usb_interface *iface;
+	struct usb_interface_descriptor *desc;
 	struct usb_endpoint_descriptor *ep = NULL;
 
-	iface = &dev->config.if_desc[ifnum];
+	iface = usb_get_interface(dev, ifnum);
+	desc = usb_get_interface_desc(iface);
 	/* Is it a hub? */
-	if (iface->desc.bInterfaceClass != USB_CLASS_HUB)
+	if (desc->bInterfaceClass != USB_CLASS_HUB)
 		goto err;
 	/* Some hubs have a subclass of 1, which AFAICT according to the */
 	/*  specs is not defined, but it works */
-	if ((iface->desc.bInterfaceSubClass != 0) &&
-	    (iface->desc.bInterfaceSubClass != 1))
+	if (desc->bInterfaceSubClass != 0 && desc->bInterfaceSubClass != 1)
 		goto err;
 	/* Multiple endpoints? What kind of mutant ninja-hub is this? */
-	if (iface->desc.bNumEndpoints != 1)
+	if (desc->bNumEndpoints != 1)
 		goto err;
-	ep = &iface->ep_desc[0];
+	ep = usb_get_endpoint_desc(iface, 0);
 	/* Output endpoint? Curiousier and curiousier.. */
 	if (!(ep->bEndpointAddress & USB_DIR_IN))
 		goto err;
@@ -914,8 +915,8 @@ static int usb_hub_check(struct usb_device *dev, int ifnum)
 
 err:
 	debug("USB hub not found: bInterfaceClass=%d, bInterfaceSubClass=%d, bNumEndpoints=%d\n",
-	      iface->desc.bInterfaceClass, iface->desc.bInterfaceSubClass,
-	      iface->desc.bNumEndpoints);
+	      desc->bInterfaceClass, desc->bInterfaceSubClass,
+	      desc->bNumEndpoints);
 	if (ep) {
 		debug("   bEndpointAddress=%#x, bmAttributes=%d",
 		      ep->bEndpointAddress, ep->bmAttributes);
@@ -938,7 +939,7 @@ int usb_hub_probe(struct usb_device *dev, int ifnum)
 #if CONFIG_IS_ENABLED(DM_USB)
 int usb_hub_scan(struct udevice *hub)
 {
-	struct usb_device *udev = dev_get_parent_priv(hub);
+	struct usb_device *udev = usb_get_device(hub);
 
 	return usb_hub_configure(udev);
 }
