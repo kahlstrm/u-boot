@@ -132,7 +132,7 @@ static int lan75xx_basic_reset(struct usb_device *udev,
 
 int lan75xx_write_hwaddr(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct eth_pdata *pdata = dev_get_plat(dev);
 	unsigned char *enetaddr = pdata->enetaddr;
 	u32 addr_lo = get_unaligned_le32(&enetaddr[0]);
@@ -164,7 +164,7 @@ int lan75xx_write_hwaddr(struct udevice *dev)
 
 static int lan75xx_eth_start(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct lan7x_private *priv = dev_get_priv(dev);
 	struct ueth_data *ueth = &priv->ueth;
 	int ret;
@@ -241,7 +241,7 @@ static int lan75xx_eth_start(struct udevice *dev)
 
 int lan75xx_read_rom_hwaddr(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct eth_pdata *pdata = dev_get_plat(dev);
 	int ret;
 
@@ -258,7 +258,7 @@ int lan75xx_read_rom_hwaddr(struct udevice *dev)
 
 static int lan75xx_eth_probe(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct lan7x_private *priv = dev_get_priv(dev);
 	struct ueth_data *ueth = &priv->ueth;
 	struct eth_pdata *pdata = dev_get_plat(dev);

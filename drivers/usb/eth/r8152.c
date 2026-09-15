@@ -1546,7 +1546,7 @@ int r8152_read_rom_hwaddr(struct udevice *dev)
 
 static int r8152_eth_probe(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct eth_pdata *pdata = dev_get_plat(dev);
 	struct r8152 *tp = dev_get_priv(dev);
 	struct ueth_data *ueth = &tp->ueth;

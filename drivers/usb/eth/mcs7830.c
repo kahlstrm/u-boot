@@ -575,7 +575,7 @@ static int mcs7830_recv_common(struct ueth_data *ueth, uint8_t *buf)
 
 static int mcs7830_eth_start(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 
 	return mcs7830_init_common(udev);
 }
@@ -617,7 +617,7 @@ static int mcs7830_free_pkt(struct udevice *dev, uchar *packet, int packet_len)
 
 int mcs7830_write_hwaddr(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct eth_pdata *pdata = dev_get_plat(dev);
 
 	return mcs7830_write_mac_common(udev, pdata->enetaddr);
@@ -625,7 +625,7 @@ int mcs7830_write_hwaddr(struct udevice *dev)
 
 static int mcs7830_eth_probe(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct mcs7830_private *priv = dev_get_priv(dev);
 	struct eth_pdata *pdata = dev_get_plat(dev);
 	struct ueth_data *ueth = &priv->ueth;

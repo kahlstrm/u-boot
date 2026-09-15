@@ -118,7 +118,7 @@ void lan7x_mdio_write(struct usb_device *udev, int phy_id, int idx, int regval)
 static int lan7x_phylib_mdio_read(struct mii_dev *bus,
 				  int addr, int devad, int reg)
 {
-	struct usb_device *udev = dev_get_parent_priv(bus->priv);
+	struct usb_device *udev = usb_get_device(bus->priv);
 
 	return lan7x_mdio_read(udev, addr, reg);
 }
@@ -126,7 +126,7 @@ static int lan7x_phylib_mdio_read(struct mii_dev *bus,
 static int lan7x_phylib_mdio_write(struct mii_dev *bus,
 				   int addr, int devad, int reg, u16 val)
 {
-	struct usb_device *udev = dev_get_parent_priv(bus->priv);
+	struct usb_device *udev = usb_get_device(bus->priv);
 
 	lan7x_mdio_write(udev, addr, reg, (int)val);
 
@@ -182,7 +182,7 @@ static int lan7x_read_eeprom(struct usb_device *udev,
  */
 int lan7x_phylib_register(struct udevice *udev)
 {
-	struct usb_device *usbdev = dev_get_parent_priv(udev);
+	struct usb_device *usbdev = usb_get_device(udev);
 	struct lan7x_private *priv = dev_get_priv(udev);
 	int ret;
 
