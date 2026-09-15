@@ -90,6 +90,7 @@ DM_TEST(dm_test_usb_interface_number, 0);
 
 static int dm_test_usb_device_accessor(struct unit_test_state *uts)
 {
+	struct usb_interface_descriptor *desc;
 	struct udevice *dev;
 
 	state_set_skip_delays(true);
@@ -97,9 +98,14 @@ static int dm_test_usb_device_accessor(struct unit_test_state *uts)
 	ut_assertok(uclass_get_device(UCLASS_MASS_STORAGE, 0, &dev));
 	ut_assertnonnull(usb_get_device(dev));
 	ut_asserteq_ptr(dev_get_parent_priv(dev), usb_get_device(dev));
+	desc = usb_get_interface_desc(usb_get_interface(usb_get_device(dev), 0));
+	ut_asserteq(USB_CLASS_MASS_STORAGE, desc->bInterfaceClass);
 	ut_assertok(uclass_get_device_by_name(UCLASS_KEYBOARD, "usb_kbd", &dev));
 	ut_assertnonnull(usb_get_device(dev));
 	ut_asserteq_ptr(dev_get_parent_priv(dev), usb_get_device(dev));
+	desc = usb_get_interface_desc(usb_get_interface(usb_get_device(dev), 0));
+	ut_asserteq(USB_CLASS_HID, desc->bInterfaceClass);
+	ut_asserteq(USB_PROT_HID_KEYBOARD, desc->bInterfaceProtocol);
 	ut_assertok(uclass_get_device(UCLASS_USB_HUB, 0, &dev));
 	ut_assertnonnull(usb_get_device(dev));
 	ut_asserteq_ptr(dev_get_parent_priv(dev), usb_get_device(dev));
