@@ -67,6 +67,27 @@ static int dm_test_usb_descriptor_accessors(struct unit_test_state *uts)
 
 DM_TEST(dm_test_usb_descriptor_accessors, 0);
 
+static int dm_test_usb_interface_number(struct unit_test_state *uts)
+{
+	ALLOC_CACHE_ALIGN_BUFFER(struct usb_device, udev, 1);
+
+	memset(udev, 0, sizeof(*udev));
+	udev->config.desc.bNumInterfaces = 2;
+	udev->config.no_of_if = 2;
+	udev->config.if_desc[0].desc.bInterfaceNumber = 3;
+	udev->config.if_desc[0].num_altsetting = 1;
+	udev->config.if_desc[1].desc.bInterfaceNumber = 7;
+	udev->config.if_desc[1].num_altsetting = 1;
+	ut_assertok(usb_set_interface(udev, 3, 0));
+	ut_assertok(usb_set_interface(udev, 7, 0));
+	ut_asserteq(-EINVAL, usb_set_interface(udev, 0, 0));
+	ut_asserteq(-EINVAL, usb_set_interface(udev, 1, 0));
+
+	return 0;
+}
+
+DM_TEST(dm_test_usb_interface_number, 0);
+
 static int dm_test_usb_device_accessor(struct unit_test_state *uts)
 {
 	struct udevice *dev;
