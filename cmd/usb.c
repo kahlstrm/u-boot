@@ -148,10 +148,12 @@ static void usb_display_string(struct usb_device *dev, int index)
 static void usb_display_desc(struct usb_device *dev)
 {
 	uint packet_size = dev->descriptor.bMaxPacketSize0;
+	struct usb_interface_descriptor *iface;
 
 	if (dev->descriptor.bDescriptorType == USB_DT_DEVICE) {
+		iface = usb_get_interface_desc(usb_get_interface(dev, 0));
 		printf("%d: %s,  USB Revision %x.%x\n", dev->devnum,
-		usb_get_class_desc(dev->config.if_desc[0].desc.bInterfaceClass),
+		usb_get_class_desc(iface->bInterfaceClass),
 				   (dev->descriptor.bcdUSB>>8) & 0xff,
 				   dev->descriptor.bcdUSB & 0xff);
 
@@ -168,7 +170,7 @@ static void usb_display_desc(struct usb_device *dev)
 		} else {
 			printf(" - Class: (from Interface) %s\n",
 			       usb_get_class_desc(
-				dev->config.if_desc[0].desc.bInterfaceClass));
+				iface->bInterfaceClass));
 		}
 		if (dev->descriptor.bcdUSB >= cpu_to_le16(0x0300))
 			packet_size = 1 << packet_size;
@@ -249,10 +251,10 @@ static void usb_display_config(struct usb_device *dev)
 	config = &dev->config;
 	usb_display_conf_desc(&config->desc, dev);
 	for (i = 0; i < config->no_of_if; i++) {
-		ifdesc = &config->if_desc[i];
-		usb_display_if_desc(&ifdesc->desc, dev);
+		ifdesc = usb_get_interface(dev, i);
+		usb_display_if_desc(usb_get_interface_desc(ifdesc), dev);
 		for (ii = 0; ii < ifdesc->no_of_ep; ii++) {
-			epdesc = &ifdesc->ep_desc[ii];
+			epdesc = usb_get_endpoint_desc(ifdesc, ii);
 			usb_display_ep_desc(epdesc);
 		}
 	}
@@ -331,6 +333,7 @@ static inline const char *portspeed(int speed)
 /* shows the device tree recursively */
 static void usb_show_tree_graph(struct usb_device *dev, char *pre)
 {
+	struct usb_interface_descriptor *iface;
 	int index;
 	int has_child, last_child;
 
@@ -393,10 +396,9 @@ static void usb_show_tree_graph(struct usb_device *dev, char *pre)
 	pre[index++] = ' ';
 	pre[index++] = has_child ? '|' : ' ';
 	pre[index] = 0;
-	printf(" %s (%s, %dmA)\n", usb_get_class_desc(
-					dev->config.if_desc[0].desc.bInterfaceClass),
-					portspeed(dev->speed),
-					dev->config.desc.bMaxPower * 2);
+	iface = usb_get_interface_desc(usb_get_interface(dev, 0));
+	printf(" %s (%s, %dmA)\n", usb_get_class_desc(iface->bInterfaceClass),
+	       portspeed(dev->speed), dev->config.desc.bMaxPower * 2);
 	if (strlen(dev->mf) || strlen(dev->prod) || strlen(dev->serial))
 		printf(" %s  %s %s %s\n", pre, dev->mf, dev->prod, dev->serial);
 	printf(" %s\n", pre);
