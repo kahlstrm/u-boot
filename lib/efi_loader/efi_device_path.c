@@ -615,7 +615,7 @@ __maybe_unused static void *dp_fill(void *buf, struct udevice *dev)
 
 		switch (device_get_uclass_id(dev->parent)) {
 		case UCLASS_USB_HUB: {
-			struct usb_device *udev = dev_get_parent_priv(dev);
+			struct usb_device *udev = usb_get_device(dev);
 
 			udp->parent_port_number = udev->portnr;
 			break;
