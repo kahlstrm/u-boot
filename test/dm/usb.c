@@ -16,6 +16,7 @@
 #include <dm/device-internal.h>
 #include <dm/test.h>
 #include <dm/uclass-internal.h>
+#include <linux/usb/usb_urb_compat.h>
 #include <test/test.h>
 #include <test/ut.h>
 
@@ -24,6 +25,36 @@ struct keyboard_test_data {
 	const char scancode;
 	const char result[6];
 };
+
+static int dm_test_usb_parent_lookup(struct unit_test_state *uts)
+{
+	ALLOC_CACHE_ALIGN_BUFFER(struct usb_device, temporary, 1);
+	struct usb_device *udev, *hub;
+	struct udevice *dev, *bus;
+
+	state_set_skip_delays(true);
+	ut_assertok(usb_init());
+	ut_assertok(uclass_get_device(UCLASS_MASS_STORAGE, 0, &dev));
+	udev = usb_get_device(dev);
+	hub = usb_get_device(dev->parent);
+	ut_asserteq(UCLASS_USB_HUB, device_get_uclass_id(dev->parent));
+	ut_asserteq_ptr(hub, usb_dev_get_parent(udev));
+
+	memset(temporary, 0, sizeof(*temporary));
+	temporary->dev = dev->parent;
+	ut_asserteq_ptr(temporary, usb_dev_get_parent(temporary));
+
+	bus = usb_get_bus(dev);
+	temporary->dev = bus;
+	ut_assertnull(usb_dev_get_parent(temporary));
+	ut_assertok(device_find_first_child_by_uclass(bus, UCLASS_USB_HUB, &dev));
+	ut_assertnull(usb_dev_get_parent(usb_get_device(dev)));
+	ut_assertok(usb_stop());
+
+	return 0;
+}
+
+DM_TEST(dm_test_usb_parent_lookup, UTF_SCAN_PDATA | UTF_SCAN_FDT);
 
 static int dm_test_usb_descriptor_accessors(struct unit_test_state *uts)
 {

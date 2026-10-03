@@ -33,12 +33,12 @@ struct usb_device *usb_dev_get_parent(struct usb_device *udev)
 	 * If these 2 are not the same we are being called from
 	 * usb_scan_device() and udev itself is the parent.
 	 */
-	if (dev_get_parent_priv(udev->dev) != udev)
+	if (usb_get_device(udev->dev) != udev)
 		return udev;
 
 	/* We are being called normally, use the parent pointer */
 	if (device_get_uclass_id(parent) == UCLASS_USB_HUB)
-		return dev_get_parent_priv(parent);
+		return usb_get_device(parent);
 
 	return NULL;
 }
