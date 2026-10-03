@@ -803,7 +803,7 @@ int acpi_device_infer_name(const struct udevice *dev, char *out_name)
 	if (!name) {
 		switch (parent_id) {
 		case UCLASS_USB: {
-			struct usb_device *udev = dev_get_parent_priv(dev);
+			struct usb_device *udev = usb_get_device(dev);
 
 			sprintf(out_name, udev->speed >= USB_SPEED_SUPER ?
 				"HS%02d" : "FS%02d", udev->portnr);
