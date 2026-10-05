@@ -907,7 +907,7 @@ struct udevice *usb_get_bus(struct udevice *dev)
 
 int usb_child_pre_probe(struct udevice *dev)
 {
-	struct usb_device *udev = dev_get_parent_priv(dev);
+	struct usb_device *udev = usb_get_device(dev);
 	struct usb_dev_plat *plat = dev_get_parent_plat(dev);
 	int ret;
 

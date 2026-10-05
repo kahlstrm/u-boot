@@ -893,7 +893,13 @@ struct udevice *usb_get_bus(struct udevice *dev);
 /**
  * usb_get_device() - Get USB state for a bound USB device
  * @dev: USB device, not a controller or a function's block-device child
- * Return: USB state allocated by the parent bus or hub for @dev
+ *
+ * The state is available to usb_child_pre_probe() after driver model allocates
+ * parent data, but its USB fields are not initialized until that hook succeeds.
+ * This function does not allocate or initialize state.
+ *
+ * Return: USB state allocated by the parent bus or hub for @dev, or NULL if
+ * parent data has not been allocated or has been freed
  */
 struct usb_device *usb_get_device(struct udevice *dev);
 
