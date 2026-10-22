@@ -6,6 +6,18 @@ U-Boot. Each fix lives on its own branch based on upstream `main` for submission
 this branch collects them on top of the release used by the Raspberry Pi 5
 installer in `kahlstrm/config`.
 
+## Branches
+
+- `usb-kbd-idle`: accept keyboards that only report key presses (Linux USB
+  gadgets such as JetKVM).
+- `usb-accessors`: route USB state lookups through `usb_get_device()`.
+- `usb-composite` (on `usb-accessors`): bind a driver to each interface of a
+  composite device, set up xHCI endpoints for every interface, and keep
+  per-function state on each function's device.
+- `jetkvm`: the above on the release, plus these tests.
+- `jetkvm-rpi5`: `jetkvm` plus the Raspberry Pi 5 RP1/NVMe support used by the
+  Talos installer.
+
 ## Tests
 
 A NixOS test VM builds a JetKVM-like gadget with Linux's `dummy_hcd` and
