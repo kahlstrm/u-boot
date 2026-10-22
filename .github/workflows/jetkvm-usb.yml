@@ -1,0 +1,32 @@
+name: JetKVM USB tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [jetkvm]
+  pull_request:
+    branches: [jetkvm]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jetkvm-usb-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  qemu:
+    name: QEMU composite gadget tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Enable KVM access
+        run: |
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+      - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # v31
+        with:
+          extra_nix_config: system-features = nixos-test benchmark big-parallel kvm
+      - name: Run tests
+        run: nix flake check -L --keep-going
