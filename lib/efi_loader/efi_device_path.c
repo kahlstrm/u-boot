@@ -397,6 +397,10 @@ __maybe_unused static unsigned int dp_size(struct udevice *dev)
 	if (!dev || !dev->driver)
 		return sizeof(struct efi_device_path_udevice);
 
+	/* A composite USB device is described by the nodes of its functions */
+	if (IS_ENABLED(CONFIG_DM_USB) && usb_is_composite(dev))
+		return dp_size(dev->parent);
+
 	switch (device_get_uclass_id(dev)) {
 	case UCLASS_ROOT:
 		/* stop traversing parents at this point: */
@@ -473,6 +477,10 @@ __maybe_unused static void *dp_fill(void *buf, struct udevice *dev)
 	uclass_id = device_get_uclass_id(dev);
 	if (uclass_id != UCLASS_ROOT)
 		buf = dp_fill(buf, dev->parent);
+
+	/* A composite USB device is described by the nodes of its functions */
+	if (IS_ENABLED(CONFIG_DM_USB) && usb_is_composite(dev))
+		return buf;
 
 	switch (uclass_id) {
 #ifdef CONFIG_NETDEVICES
@@ -612,8 +620,18 @@ __maybe_unused static void *dp_fill(void *buf, struct udevice *dev)
 	case UCLASS_MASS_STORAGE:
 	case UCLASS_USB_HUB: {
 		struct efi_device_path_usb *udp = buf;
+		struct udevice *port_dev = dev;
+		u8 ifnum = 0;
 
-		switch (device_get_uclass_id(dev->parent)) {
+		/* A function of a composite device uses its port and interface */
+		if (IS_ENABLED(CONFIG_DM_USB) && usb_is_composite(dev->parent)) {
+			struct usb_dev_plat *plat = dev_get_parent_plat(dev);
+
+			port_dev = dev->parent;
+			ifnum = plat->ifnum;
+		}
+
+		switch (device_get_uclass_id(port_dev->parent)) {
 		case UCLASS_USB_HUB: {
 			struct usb_device *udev = usb_get_device(dev);
 
@@ -626,7 +644,7 @@ __maybe_unused static void *dp_fill(void *buf, struct udevice *dev)
 		udp->dp.type     = DEVICE_PATH_TYPE_MESSAGING_DEVICE;
 		udp->dp.sub_type = DEVICE_PATH_SUB_TYPE_MSG_USB;
 		udp->dp.length   = sizeof(*udp);
-		udp->usb_interface = 0;
+		udp->usb_interface = ifnum;
 
 		return &udp[1];
 	}
