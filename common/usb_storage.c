@@ -186,7 +186,11 @@ static unsigned int usb_get_max_lun(struct us_data *us)
 	return (len > 0) ? *result : 0;
 }
 
-static int usb_stor_probe_device(struct usb_device *udev)
+/*
+ * @dev is the mass-storage device, which holds the per-device state; it is
+ * NULL without driver model.
+ */
+static int usb_stor_probe_device(struct udevice *dev, struct usb_device *udev)
 {
 	int lun, max_lun;
 
@@ -207,25 +211,25 @@ static int usb_stor_probe_device(struct usb_device *udev)
 	 * is shared by all LUNs (block devices) attached to this mass storage
 	 * device.
 	 */
-	data = dev_get_plat(udev->dev);
+	data = dev_get_plat(dev);
 	if (!usb_storage_probe(udev, 0, data))
 		return 0;
 	max_lun = usb_get_max_lun(data);
 	for (lun = 0; lun <= max_lun; lun++) {
 		struct blk_desc *blkdev;
-		struct udevice *dev;
+		struct udevice *blk;
 		char str[10];
 
 		snprintf(str, sizeof(str), "lun%d", lun);
-		ret = blk_create_devicef(udev->dev, "usb_storage_blk", str,
+		ret = blk_create_devicef(dev, "usb_storage_blk", str,
 					 UCLASS_USB, usb_max_devs,
-					 DEFAULT_BLKSZ, 0, &dev);
+					 DEFAULT_BLKSZ, 0, &blk);
 		if (ret) {
 			debug("Cannot bind driver\n");
 			return ret;
 		}
 
-		blkdev = dev_get_uclass_plat(dev);
+		blkdev = dev_get_uclass_plat(blk);
 		blkdev->target = 0xff;
 		blkdev->lun = lun;
 
@@ -235,21 +239,21 @@ static int usb_stor_probe_device(struct usb_device *udev)
 			debug("%s: Found device %p\n", __func__, udev);
 		} else {
 			debug("usb_stor_get_info: Invalid device\n");
-			ret = device_unbind(dev);
+			ret = device_unbind(blk);
 			if (ret)
 				return ret;
 			continue;
 		}
 
-		ret = blk_probe_or_unbind(dev);
+		ret = blk_probe_or_unbind(blk);
 		if (ret)
 			return ret;
 
-		ret = bootdev_setup_for_sibling_blk(dev, "usb_bootdev");
+		ret = bootdev_setup_for_sibling_blk(blk, "usb_bootdev");
 		if (ret) {
 			int ret2;
 
-			ret2 = device_unbind(dev);
+			ret2 = device_unbind(blk);
 			if (ret2)
 				return log_msg_ret("bootdev", ret2);
 			return log_msg_ret("bootdev", ret);
@@ -329,7 +333,7 @@ int usb_stor_scan(int mode)
 
 		dev = usb_get_dev_index(i); /* get device */
 		debug("i=%d\n", i);
-		if (usb_stor_probe_device(dev))
+		if (usb_stor_probe_device(NULL, dev))
 			break;
 	} /* for */
 
@@ -1161,6 +1165,7 @@ static unsigned long usb_stor_read(struct blk_desc *block_dev, lbaint_t blknr,
 #if CONFIG_IS_ENABLED(BLK)
 	block_dev = dev_get_uclass_plat(dev);
 	udev = usb_get_device(dev_get_parent(dev));
+	ss = dev_get_plat(dev_get_parent(dev));
 	debug("\nusb_read: udev %d\n", block_dev->devnum);
 #else
 	debug("\nusb_read: udev %d\n", block_dev->devnum);
@@ -1169,8 +1174,8 @@ static unsigned long usb_stor_read(struct blk_desc *block_dev, lbaint_t blknr,
 		debug("%s: No device\n", __func__);
 		return 0;
 	}
-#endif
 	ss = (struct us_data *)udev->privptr;
+#endif
 
 	usb_disable_asynch(1); /* asynch transfer not allowed */
 	usb_lock_async(udev, 1);
@@ -1245,6 +1250,7 @@ static unsigned long usb_stor_write(struct blk_desc *block_dev, lbaint_t blknr,
 #if CONFIG_IS_ENABLED(BLK)
 	block_dev = dev_get_uclass_plat(dev);
 	udev = usb_get_device(dev_get_parent(dev));
+	ss = dev_get_plat(dev_get_parent(dev));
 	debug("\nusb_read: udev %d\n", block_dev->devnum);
 #else
 	debug("\nusb_read: udev %d\n", block_dev->devnum);
@@ -1253,8 +1259,8 @@ static unsigned long usb_stor_write(struct blk_desc *block_dev, lbaint_t blknr,
 		debug("%s: No device\n", __func__);
 		return 0;
 	}
-#endif
 	ss = (struct us_data *)udev->privptr;
+#endif
 
 	usb_disable_asynch(1); /* asynch transfer not allowed */
 	usb_lock_async(udev, 1);
@@ -1531,7 +1537,7 @@ static int usb_mass_storage_probe(struct udevice *dev)
 	int ret;
 
 	usb_disable_asynch(1); /* asynch transfer not allowed */
-	ret = usb_stor_probe_device(udev);
+	ret = usb_stor_probe_device(dev, udev);
 	usb_disable_asynch(0); /* asynch transfer allowed */
 
 	return ret;
