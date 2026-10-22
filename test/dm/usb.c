@@ -5,9 +5,13 @@
 
 #include <console.h>
 #include <dm.h>
+#include <event.h>
+#include <iomux.h>
 #include <malloc.h>
 #include <memalign.h>
+#include <os.h>
 #include <part.h>
+#include <stdio_dev.h>
 #include <usb.h>
 #include <usb_ether.h>
 #include <asm/io.h>
@@ -321,6 +325,165 @@ static int dm_test_usb_alternate_setting(struct unit_test_state *uts)
 }
 DM_TEST(dm_test_usb_alternate_setting, UTF_SCAN_PDATA | UTF_SCAN_FDT);
 
+static int check_usb_composite_io(struct unit_test_state *uts,
+				  struct udevice *flash, unsigned int ifnum)
+{
+	struct udevice *dev, *emul, *storage = NULL;
+	struct uclass *uc;
+	char report[USB_KBD_BOOT_REPORT_SIZE] = { 0, 0, 0x04 };
+	char data[1024];
+	struct blk_desc *desc;
+
+	if (ifnum) {
+		ut_assertok(sandbox_usb_flash_keyb_add_string(flash, report));
+		ut_asserteq(1, tstc());
+		ut_asserteq('a', getchar());
+		ut_asserteq(0, tstc());
+	}
+	ut_assertok(uclass_get(UCLASS_MASS_STORAGE, &uc));
+	uclass_foreach_dev(dev, uc) {
+		ut_assertok(usb_emul_find_for_dev(dev, &emul));
+		if (emul == flash) {
+			storage = dev;
+			break;
+		}
+	}
+	ut_assertnonnull(storage);
+	desc = blk_get_by_device(storage);
+	ut_assertnonnull(desc);
+	memset(data, 0, sizeof(data));
+	ut_asserteq(2, blk_dread(desc, 0, 2, data));
+	ut_asserteq_str("composite USB disk", data);
+	if (ifnum) {
+		report[2] = 0x05;
+		ut_assertok(sandbox_usb_flash_keyb_add_string(flash, report));
+		ut_asserteq(1, tstc());
+		ut_asserteq('b', getchar());
+		ut_asserteq(0, tstc());
+	}
+	return 0;
+}
+
+static int check_usb_composite(struct unit_test_state *uts, unsigned int ifnum)
+{
+	const char *pathname = "usb-composite-test.img";
+	struct udevice *flash, *keyb;
+	char *image;
+	int ret;
+
+	image = calloc(1, 4 * 1024 * 1024);
+	ut_assertnonnull(image);
+	strcpy(image, "composite USB disk");
+	ret = os_write_file(pathname, image, 4 * 1024 * 1024);
+	free(image);
+	ut_assertok(ret);
+	ut_assertok(uclass_find_device_by_name(UCLASS_USB_EMUL, "flash-stick@0",
+					      &flash));
+	ut_assertok(sandbox_usb_flash_configure(flash, ifnum, pathname));
+	if (ifnum) {
+		/* The keyboard under test is on the same device as the disk. */
+		ut_assertok(uclass_find_device_by_name(UCLASS_USB_EMUL, "keyb@3",
+						      &keyb));
+		ut_assertok(device_unbind(keyb));
+	}
+	state_set_skip_delays(true);
+	ut_assertok(usb_init());
+	ret = check_usb_composite_io(uts, flash, ifnum);
+	ut_assertok(usb_stop());
+	ut_assertok(os_unlink(pathname));
+	return ret;
+}
+
+static int dm_test_usb_composite_storage_zero(struct unit_test_state *uts)
+{
+	return check_usb_composite(uts, 0);
+}
+DM_TEST(dm_test_usb_composite_storage_zero, UTF_SCAN_PDATA | UTF_SCAN_FDT);
+
+static int dm_test_usb_composite_storage_one(struct unit_test_state *uts)
+{
+	return check_usb_composite(uts, 1);
+}
+DM_TEST(dm_test_usb_composite_storage_one, UTF_SCAN_PDATA | UTF_SCAN_FDT);
+
+static int dm_test_usb_composite_storage_four(struct unit_test_state *uts)
+{
+	return check_usb_composite(uts, 4);
+}
+DM_TEST(dm_test_usb_composite_storage_four, UTF_SCAN_PDATA | UTF_SCAN_FDT);
+
+static int check_usb_apple_keyboard(struct unit_test_state *uts,
+				    struct udevice *keyb)
+{
+	struct udevice *hub, *dev, *emul, *matched = NULL;
+	struct usb_dev_plat *plat;
+	struct uclass *uc;
+	int count = 0;
+
+	ut_assertok(uclass_get(UCLASS_USB_HUB, &uc));
+	uclass_foreach_dev(hub, uc) {
+		device_foreach_child(dev, hub) {
+			ut_assertok(usb_emul_find_for_dev(dev, &emul));
+			if (emul != keyb)
+				continue;
+			matched = dev;
+			count++;
+		}
+	}
+	ut_asserteq(1, count);
+	ut_assert(device_active(matched));
+	ut_asserteq(UCLASS_KEYBOARD, device_get_uclass_id(matched));
+	ut_asserteq_str("usb_kbd", matched->driver->name);
+	plat = dev_get_parent_plat(matched);
+	ut_asserteq(USB_DEVICE_ID_MATCH_DEVICE, plat->id.match_flags);
+	ut_asserteq(0x05ac, plat->id.idVendor);
+	ut_asserteq(0x029c, plat->id.idProduct);
+	ut_asserteq(0, plat->ifnum);
+
+	return 0;
+}
+
+static int dm_test_usb_apple_keyboard(struct unit_test_state *uts)
+{
+	struct usb_device_descriptor device;
+	struct usb_interface_descriptor interface0, interface1;
+	struct usb_generic_descriptor *descriptors[9];
+	struct usb_dev_plat *plat;
+	struct udevice *keyb;
+	int i, ret;
+
+	ut_assertok(uclass_find_device_by_name(UCLASS_USB_EMUL, "keyb@3", &keyb));
+	plat = dev_get_parent_plat(keyb);
+	for (i = 0; i < ARRAY_SIZE(descriptors); i++) {
+		descriptors[i] = plat->desc_list[i];
+		if (!descriptors[i])
+			break;
+	}
+	ut_asserteq(ARRAY_SIZE(descriptors) - 1, i);
+	memcpy(&device, descriptors[0], sizeof(device));
+	/* Magic Keyboard 2021: non-boot HID first, boot keyboard second. */
+	device.idVendor = cpu_to_le16(0x05ac);
+	device.idProduct = cpu_to_le16(0x029c);
+	ut_asserteq(0, device.bDeviceClass);
+	descriptors[0] = (struct usb_generic_descriptor *)&device;
+	memcpy(&interface0, descriptors[2], sizeof(interface0));
+	interface0.bInterfaceSubClass = 0;
+	interface0.bInterfaceProtocol = 0;
+	descriptors[2] = (struct usb_generic_descriptor *)&interface0;
+	memcpy(&interface1, descriptors[5], sizeof(interface1));
+	interface1.bInterfaceProtocol = USB_PROT_HID_KEYBOARD;
+	ut_asserteq(1, interface1.bInterfaceNumber);
+	descriptors[5] = (struct usb_generic_descriptor *)&interface1;
+	plat->desc_list = descriptors;
+	state_set_skip_delays(true);
+	ut_assertok(usb_init());
+	ret = check_usb_apple_keyboard(uts, keyb);
+	ut_assertok(usb_stop());
+
+	return ret;
+}
+DM_TEST(dm_test_usb_apple_keyboard, UTF_SCAN_PDATA | UTF_SCAN_FDT);
+
 /* test that we can handle multiple storage devices */
 static int dm_test_usb_multi(struct unit_test_state *uts)
 {
@@ -402,6 +565,154 @@ static int dm_test_usb_stop(struct unit_test_state *uts)
 	return 0;
 }
 DM_TEST(dm_test_usb_stop, UTF_SCAN_PDATA | UTF_SCAN_FDT);
+
+static int check_usb_composite_bindings(struct unit_test_state *uts,
+					struct udevice *flash, int storage_count)
+{
+	const enum uclass_id classes[] = { UCLASS_KEYBOARD, UCLASS_MASS_STORAGE };
+	struct udevice *dev, *emul;
+	struct uclass *uc;
+	int i, count;
+
+	for (i = 0; i < ARRAY_SIZE(classes); i++) {
+		count = 0;
+		ut_assertok(uclass_get(classes[i], &uc));
+		uclass_foreach_dev(dev, uc) {
+			if (!usb_is_composite(dev->parent))
+				continue;
+			ut_assertok(usb_emul_find_for_dev(dev, &emul));
+			if (emul != flash)
+				continue;
+			ut_assert(device_active(dev));
+			/* Functions share the USB state of their composite device */
+			ut_asserteq_ptr(usb_get_device(dev->parent),
+					usb_get_device(dev));
+			if (classes[i] == UCLASS_MASS_STORAGE)
+				ut_assertnonnull(blk_get_by_device(dev));
+			count++;
+		}
+		ut_asserteq(classes[i] == UCLASS_MASS_STORAGE ? storage_count : 1,
+			   count);
+	}
+	ut_assertnonnull(stdio_get_by_name("usbkbd"));
+
+	return 0;
+}
+
+static int dm_test_usb_composite_restart(struct unit_test_state *uts)
+{
+	struct udevice *bus, *flash, *keyb;
+	struct mallinfo before, allocated, after;
+	void *allocation;
+	int baseline = 0;
+	int baseline_consoles = 0;
+	int used;
+	int i, ret;
+
+	before = mallinfo();
+	allocation = malloc(256);
+	ut_assertnonnull(allocation);
+	allocated = mallinfo();
+	free(allocation);
+	after = mallinfo();
+	ut_assert(before.uordblks > 0);
+	ut_assert(allocated.uordblks > before.uordblks);
+	ut_asserteq(before.uordblks, after.uordblks);
+
+	ut_assertok(uclass_find_device_by_name(UCLASS_USB, "usb@1", &bus));
+	state_set_skip_delays(true);
+	for (i = 0; i < 4; i++) {
+		/* usb_stop() also destroys the sandbox's emulated peripherals. */
+		ut_assertok(dm_scan_fdt_dev(bus));
+		ut_assertok(uclass_find_device_by_name(UCLASS_USB_EMUL,
+						      "flash-stick@0", &flash));
+		ut_assertok(sandbox_usb_flash_configure(flash, 4, NULL));
+		ut_assertok(uclass_find_device_by_name(UCLASS_USB_EMUL,
+						      "keyb@3", &keyb));
+		ut_assertok(device_unbind(keyb));
+		ut_assertok(usb_init());
+		ret = check_usb_composite_bindings(uts, flash, 1);
+		ut_assertok(usb_stop());
+		ut_assertok(ret);
+		ut_asserteq(0, count_usb_devices());
+		ut_assertnull(stdio_get_by_name("usbkbd"));
+		blkcache_free();
+		ut_assertnonnull(console_devices[stdin]);
+		after = mallinfo();
+		/* The live console list is replaced with variably padded chunks. */
+		used = after.uordblks - malloc_usable_size(console_devices[stdin]);
+		/* Compare stopped states after one-time USB setup has settled. */
+		if (!i) {
+			baseline = used;
+			baseline_consoles = cd_count[stdin];
+		} else {
+			ut_asserteq(baseline_consoles, cd_count[stdin]);
+			ut_asserteq(baseline, used);
+		}
+	}
+
+	return 0;
+}
+DM_TEST(dm_test_usb_composite_restart, UTF_SCAN_PDATA | UTF_SCAN_FDT);
+
+struct usb_composite_probe_failure {
+	struct udevice *flash;
+	int count;
+	bool had_block_device;
+};
+
+static int fail_usb_composite_storage(void *ctx, struct event *event)
+{
+	struct usb_composite_probe_failure *state = ctx;
+	struct udevice *dev = event->data.dm.dev;
+	struct udevice *emul;
+	int ret;
+
+	if (device_get_uclass_id(dev) != UCLASS_MASS_STORAGE ||
+	    !usb_is_composite(dev->parent))
+		return 0;
+	ret = usb_emul_find_for_dev(dev, &emul);
+	if (ret)
+		return ret;
+	if (emul != state->flash)
+		return 0;
+	state->count++;
+	state->had_block_device = blk_get_by_device(dev) != NULL;
+
+	return -EIO;
+}
+
+static int dm_test_usb_composite_probe_failure(struct unit_test_state *uts)
+{
+	const char *other_devices[] = { "keyb@3", "flash-stick@1", "flash-stick@2" };
+	struct usb_composite_probe_failure state = {};
+	struct udevice *dev;
+	int i, ret;
+
+	ut_assertok(uclass_find_device_by_name(UCLASS_USB_EMUL, "flash-stick@0",
+					      &state.flash));
+	ut_assertok(sandbox_usb_flash_configure(state.flash, 4, NULL));
+	/* A later disk could reuse a failed storage binding and hide it. */
+	for (i = 0; i < ARRAY_SIZE(other_devices); i++) {
+		ut_assertok(uclass_find_device_by_name(UCLASS_USB_EMUL,
+						      other_devices[i], &dev));
+		ut_assertok(device_unbind(dev));
+	}
+	ut_assertok(event_register("usb-storage-failure", EVT_DM_POST_PROBE,
+				   fail_usb_composite_storage, &state));
+	state_set_skip_delays(true);
+	ut_assertok(usb_init());
+	ret = check_usb_composite_bindings(uts, state.flash, 0);
+	ut_assertok(usb_stop());
+	ut_assertok(ret);
+	ut_asserteq(1, state.count);
+	ut_assert(state.had_block_device);
+	ut_asserteq(0, count_usb_devices());
+	ut_assertnull(stdio_get_by_name("usbkbd"));
+
+	return 0;
+}
+DM_TEST(dm_test_usb_composite_probe_failure, UTF_SCAN_PDATA | UTF_SCAN_FDT);
 
 /**
  * dm_test_usb_keyb() - test USB keyboard driver

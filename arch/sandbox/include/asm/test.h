@@ -123,6 +123,10 @@ long sandbox_i2c_rtc_get_set_base_time(struct udevice *dev, long base_time);
 
 int sandbox_usb_keyb_add_string(struct udevice *dev, const char *str);
 
+int sandbox_usb_flash_configure(struct udevice *dev, unsigned int ifnum,
+			       const char *pathname);
+int sandbox_usb_flash_keyb_add_string(struct udevice *dev, const char *report);
+
 /**
  * sandbox_osd_get_mem() - get the internal memory of a sandbox OSD
  *

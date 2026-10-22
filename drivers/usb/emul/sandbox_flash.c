@@ -13,6 +13,7 @@
 #include <scsi.h>
 #include <scsi_emul.h>
 #include <usb.h>
+#include <asm/test.h>
 
 /*
  * This driver emulates a flash stick using the UFI command specification and
@@ -51,11 +52,18 @@ struct sandbox_flash_priv {
 	u32 tag;
 	int fd;
 	struct umass_bbb_csw status;
+	u8 keyboard_report[USB_KBD_BOOT_REPORT_SIZE];
 };
 
 struct sandbox_flash_plat {
 	const char *pathname;
 	struct usb_string flash_strings[STRINGID_COUNT];
+	unsigned int storage_interface;
+	struct usb_config_descriptor config;
+	struct usb_interface_descriptor storage;
+	struct usb_interface_descriptor hid[4];
+	struct usb_endpoint_descriptor hid_ep[4];
+	void *descriptors[18];
 };
 
 static struct usb_device_descriptor flash_device_desc = {
@@ -130,13 +138,97 @@ static void *flash_desc_list[] = {
 	NULL,
 };
 
+static struct usb_class_hid_descriptor flash_hid_report = {
+	.bLength = sizeof(struct usb_class_hid_descriptor),
+	.bDescriptorType = USB_DT_HID,
+	.bcdCDC = __constant_cpu_to_le16(0x101),
+	.bNumDescriptors = 1,
+	.bDescriptorType0 = USB_DT_HID_REPORT,
+	.wDescriptorLength0 = __constant_cpu_to_le16(0x3f),
+};
+
+int sandbox_usb_flash_configure(struct udevice *dev, unsigned int ifnum,
+			       const char *pathname)
+{
+	struct sandbox_flash_plat *plat = dev_get_plat(dev);
+	int i, n = 0;
+
+	if (ifnum > ARRAY_SIZE(plat->hid))
+		return -EINVAL;
+
+	plat->pathname = pathname;
+	plat->storage_interface = ifnum;
+	plat->config = flash_config0;
+	plat->config.bNumInterfaces = ifnum + 1;
+	plat->storage = flash_interface0;
+	plat->storage.bInterfaceNumber = ifnum;
+	plat->descriptors[n++] = &flash_device_desc;
+	plat->descriptors[n++] = &plat->config;
+	for (i = 0; i < ifnum; i++) {
+		plat->hid[i] = (struct usb_interface_descriptor) {
+			.bLength = sizeof(struct usb_interface_descriptor),
+			.bDescriptorType = USB_DT_INTERFACE,
+			.bInterfaceNumber = i,
+			.bNumEndpoints = 1,
+			.bInterfaceClass = USB_CLASS_HID,
+			.bInterfaceSubClass = USB_SUB_HID_BOOT,
+			.bInterfaceProtocol = i ? USB_PROT_HID_MOUSE :
+						 USB_PROT_HID_KEYBOARD,
+		};
+		plat->hid_ep[i] = (struct usb_endpoint_descriptor) {
+			.bLength = USB_DT_ENDPOINT_SIZE,
+			.bDescriptorType = USB_DT_ENDPOINT,
+			.bEndpointAddress = USB_ENDPOINT_DIR_MASK | (i + 3),
+			.bmAttributes = USB_ENDPOINT_XFER_INT,
+			.wMaxPacketSize = cpu_to_le16(USB_KBD_BOOT_REPORT_SIZE),
+			.bInterval = 10,
+		};
+		plat->descriptors[n++] = &plat->hid[i];
+		plat->descriptors[n++] = &flash_hid_report;
+		plat->descriptors[n++] = &plat->hid_ep[i];
+	}
+	plat->descriptors[n++] = &plat->storage;
+	plat->descriptors[n++] = &flash_endpoint0_out;
+	plat->descriptors[n++] = &flash_endpoint1_in;
+	plat->descriptors[n] = NULL;
+
+	return usb_emul_setup_device(dev, plat->flash_strings, plat->descriptors);
+}
+
+int sandbox_usb_flash_keyb_add_string(struct udevice *dev, const char *report)
+{
+	struct sandbox_flash_priv *priv = dev_get_priv(dev);
+
+	memcpy(priv->keyboard_report, report, USB_KBD_BOOT_REPORT_SIZE);
+	return 0;
+}
+
+static int sandbox_flash_interrupt(struct udevice *dev, struct usb_device *udev,
+				   unsigned long pipe, void *buffer, int length,
+				   int interval, bool nonblock)
+{
+	struct sandbox_flash_plat *plat = dev_get_plat(dev);
+	struct sandbox_flash_priv *priv = dev_get_priv(dev);
+
+	if (!plat->storage_interface || usb_pipeendpoint(pipe) != 3 ||
+	    length != USB_KBD_BOOT_REPORT_SIZE)
+		return -EIO;
+
+	memcpy(buffer, priv->keyboard_report, length);
+	memset(priv->keyboard_report, 0, length);
+	return 0;
+}
+
 static int sandbox_flash_control(struct udevice *dev, struct usb_device *udev,
 				 unsigned long pipe, void *buff, int len,
 				 struct devrequest *setup)
 {
 	struct sandbox_flash_priv *priv = dev_get_priv(dev);
+	struct sandbox_flash_plat *plat = dev_get_plat(dev);
 
 	if (pipe == usb_rcvctrlpipe(udev, 0)) {
+		if (le16_to_cpu(setup->index) != plat->storage_interface)
+			return -EIO;
 		switch (setup->request) {
 		case US_BBB_RESET:
 			priv->error = false;
@@ -313,7 +405,8 @@ static int sandbox_flash_of_to_plat(struct udevice *dev)
 {
 	struct sandbox_flash_plat *plat = dev_get_plat(dev);
 
-	plat->pathname = dev_read_string(dev, "sandbox,filepath");
+	if (!plat->pathname)
+		plat->pathname = dev_read_string(dev, "sandbox,filepath");
 
 	return 0;
 }
@@ -370,6 +463,7 @@ static int sandbox_flash_remove(struct udevice *dev)
 static const struct dm_usb_ops sandbox_usb_flash_ops = {
 	.control	= sandbox_flash_control,
 	.bulk		= sandbox_flash_bulk,
+	.interrupt	= sandbox_flash_interrupt,
 };
 
 static const struct udevice_id sandbox_usb_flash_ids[] = {
