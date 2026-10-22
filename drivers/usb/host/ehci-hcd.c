@@ -1548,15 +1548,16 @@ static int _ehci_submit_int_msg(struct usb_device *dev, unsigned long pipe,
 	timeout = get_timer(0) + USB_TIMEOUT_MS(pipe);
 	while ((backbuffer = _ehci_poll_int_queue(dev, queue)) == NULL)
 		if (get_timer(0) > timeout) {
-			printf("Timeout poll on interrupt endpoint\n");
+			/* A device with nothing to report, such as an idle keyboard */
+			debug("Timeout poll on interrupt endpoint\n");
 			result = -ETIMEDOUT;
 			break;
 		}
 
-	if (backbuffer != buffer) {
+	if (backbuffer && backbuffer != buffer) {
 		debug("got wrong buffer back (%p instead of %p)\n",
 		      backbuffer, buffer);
-		return -EINVAL;
+		result = -EINVAL;
 	}
 
 	ret = _ehci_destroy_int_queue(dev, queue);
