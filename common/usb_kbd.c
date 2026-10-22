@@ -579,20 +579,27 @@ static int probe_usb_keyboard(struct udevice *dev)
 {
 	struct usb_device *udev = usb_get_device(dev);
 	struct usb_kbd_pdata *data = dev_get_priv(dev);
+	struct usb_dev_plat *plat = dev_get_parent_plat(dev);
 	char *stdinname;
 	struct stdio_dev usb_kbd_dev;
 	unsigned int ifnum;
-	unsigned int max_ifnum = min((unsigned int)USB_MAX_ACTIVE_INTERFACES,
-				     (unsigned int)udev->config.no_of_if);
 	int error;
 
-	/* Try probing the keyboard */
-	for (ifnum = 0; ifnum < max_ifnum; ifnum++) {
-		if (usb_kbd_probe_dev(udev, data, ifnum) == 1)
-			break;
+	/*
+	 * A keyboard matched by interface uses that interface. One matched by
+	 * device ID, such as Apple keyboards, may have it on another interface.
+	 */
+	if (plat->id.match_flags & USB_DEVICE_ID_MATCH_INTERFACE) {
+		if (usb_kbd_probe_dev(udev, data, plat->ifnum) != 1)
+			return -ENOENT;
+	} else {
+		for (ifnum = 0; ifnum < udev->config.no_of_if; ifnum++) {
+			if (usb_kbd_probe_dev(udev, data, ifnum) == 1)
+				break;
+		}
+		if (ifnum == udev->config.no_of_if)
+			return -ENOENT;
 	}
-	if (ifnum >= max_ifnum)
-		return -ENOENT;
 
 	/* Register the keyboard */
 	debug("USB KBD: register.\n");
