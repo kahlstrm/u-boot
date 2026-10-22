@@ -35,3 +35,22 @@ nix build -L .#checks.x86_64-linux.branch-stock       # one combination
   FAT disk, type on the keyboard, the keyboard with periodic idle reports (which
   Linux's HID gadget does not send), and the disk after `usb reset`. Update it in
   the same commit as a fix that changes a result.
+
+## Testing on a Raspberry Pi 5 with a JetKVM (`jetkvm-rpi5`)
+
+`nix build .#rpi5-launcher` builds a 65 MiB disk image with this U-Boot and the
+Pi 5 boot files of the pinned `sbc-raspberrypi` overlay (the `config.txt` is the
+one the Talos installer writes). Its partition is plain FAT32, not an EFI
+system partition, so U-Boot ignores it and boots the node's NVMe as usual. The
+node's disks are not written.
+
+It needs a Pi 5 whose EEPROM tries USB before NVMe (`BOOT_ORDER=0xf164`):
+
+1. Upload the image to the JetKVM as virtual media in disk mode (not CD-ROM)
+   and mount it.
+2. Power-cycle the Pi and watch its UART. U-Boot should report the JetKVM's
+   storage device during `usb start`.
+3. Interrupt autoboot from the JetKVM keyboard, then run `usb tree` and
+   `fatls usb 0` there; the listing shows `u-boot.bin` and `config.txt`.
+4. Run `boot` (or power-cycle and let autoboot run); the node boots from NVMe.
+5. Unmount the image; the next power cycle boots the node's own U-Boot.

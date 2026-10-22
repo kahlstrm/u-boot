@@ -73,6 +73,61 @@
 
       expected = lib.importJSON ./jetkvm/expected.json;
 
+      # Raspberry Pi 5: U-Boot from this tree and the boot files of the pinned
+      # sbc-raspberrypi overlay used by the Talos installer.
+      rpi5UBoot = pkgs.pkgsCross.aarch64-multiplatform.buildUBoot {
+        version = "2026.10-jetkvm";
+        src = variants.branch.src;
+        defconfig = "rpi_arm64_defconfig";
+        extraMeta.platforms = [ "aarch64-linux" ];
+        filesToInstall = [ "u-boot.bin" ];
+      };
+
+      rpi5BootFiles =
+        pkgs.runCommand "rpi5-boot-files"
+          {
+            nativeBuildInputs = [ pkgs.jq ];
+            image = pkgs.dockerTools.pullImage {
+              imageName = "ghcr.io/siderolabs/sbc-raspberrypi";
+              imageDigest = "sha256:af82d9f97241fb66c5b660b03e9154fd54ba4560b58ed3b53765bb930d564167";
+              hash = "sha256-5IZnFjVm48b3Ep9d6urv1NbuefGukPikzYz26i7CVwM=";
+              finalImageTag = "v0.2.2";
+              os = "linux";
+              arch = "arm64";
+            };
+          }
+          ''
+            mkdir archive root
+            tar -xf "$image" -C archive
+            for layer in $(jq -r '.[0].Layers[]' archive/manifest.json); do
+              tar -xf "archive/$layer" -C root
+            done
+            cp -r root/artifacts/rpi_5 "$out"
+          '';
+
+      # A JetKVM virtual disk that starts this U-Boot on a Pi 5 whose EEPROM
+      # boots USB first. The partition is not an EFI system partition, so
+      # U-Boot boots the NVMe as usual and nothing on the node is written.
+      rpi5Launcher =
+        pkgs.runCommand "rpi5-launcher.img"
+          {
+            nativeBuildInputs = with pkgs; [
+              dosfstools
+              mtools
+              util-linux
+            ];
+          }
+          ''
+            truncate -s 64M part.img
+            mkfs.vfat -F 32 -n LAUNCHER part.img
+            mcopy -s -i part.img ${rpi5BootFiles}/* ::/
+            mcopy -i part.img ${./jetkvm/rpi5/config.txt} ::/config.txt
+            mcopy -i part.img ${rpi5UBoot}/u-boot.bin ::/u-boot.bin
+            truncate -s 65M "$out"
+            echo 'start=2048, type=c' | sfdisk --quiet "$out"
+            dd if=part.img of="$out" bs=1M seek=1 conv=notrunc status=none
+          '';
+
       check =
         variant: layout:
         pkgs.testers.runNixOSTest {
@@ -113,7 +168,10 @@
         };
     in
     {
-      packages.${system} = lib.mapAttrs' (n: v: lib.nameValuePair "u-boot-${n}" v) variants;
+      packages.${system} = lib.mapAttrs' (n: v: lib.nameValuePair "u-boot-${n}" v) variants // {
+        rpi5-u-boot = rpi5UBoot;
+        rpi5-launcher = rpi5Launcher;
+      };
       checks.${system} = lib.listToAttrs (
         lib.concatMap (
           variant:
