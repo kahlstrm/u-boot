@@ -1,10 +1,30 @@
 {
   "upstream": {
-    "stock": { "disk": false, "keyboard": false, "keyboard_with_idle_reports": true, "disk_after_reset": false },
-    "storage-first": { "disk": true, "keyboard": false, "keyboard_with_idle_reports": false, "disk_after_reset": true }
+    "stock": {
+      "disk": false,
+      "keyboard": false,
+      "keyboard_with_idle_reports": true,
+      "disk_after_reset": false
+    },
+    "storage-first": {
+      "disk": true,
+      "keyboard": false,
+      "keyboard_with_idle_reports": false,
+      "disk_after_reset": true
+    }
   },
   "branch": {
-    "stock": { "disk": false, "keyboard": false, "keyboard_with_idle_reports": true, "disk_after_reset": false },
-    "storage-first": { "disk": true, "keyboard": false, "keyboard_with_idle_reports": false, "disk_after_reset": true }
+    "stock": {
+      "disk": false,
+      "keyboard": true,
+      "keyboard_with_idle_reports": true,
+      "disk_after_reset": false
+    },
+    "storage-first": {
+      "disk": true,
+      "keyboard": false,
+      "keyboard_with_idle_reports": false,
+      "disk_after_reset": true
+    }
   }
 }
