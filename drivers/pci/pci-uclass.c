@@ -783,6 +783,83 @@ static int pci_find_and_bind_driver(struct udevice *parent,
 	if (ofnode_valid(dev_ofnode(parent)))
 		pci_dev_find_ofnode(parent, bdf, &node);
 
+	/*
+	 * If no ofnode found at the current bus level, search the root
+	 * controller's DT children and siblings by PCI vendor/device
+	 * compatible string.  This handles topologies where a PCI endpoint
+	 * is described near the host controller in the DT but sits behind
+	 * a bridge in the actual PCI topology.
+	 *
+	 * Two search scopes are needed because firmware DTBs vary:
+	 *  - Upstream/Talos kernel DTBs place rp1_nexus as a child of
+	 *    pcie@1000120000 -> search controller's children.
+	 *  - Raspberry Pi firmware DTBs place rp1_nexus as a sibling of
+	 *    pcie@1000120000 under /axi -> search controller's parent's
+	 *    children.
+	 *
+	 * We use ofnode_device_is_compatible() with formatted PCI
+	 * compatible strings instead of ofnode_read_pci_vendev() because
+	 * firmware DTBs may use short device IDs (e.g. "pci1de4,1"
+	 * instead of "pci1de4,0001") which ofnode_read_pci_vendev()
+	 * cannot parse.
+	 */
+	if (!ofnode_valid(node)) {
+		struct udevice *ctlr = pci_get_controller(parent);
+
+		if (ofnode_valid(dev_ofnode(ctlr))) {
+			ofnode cnode;
+			/*
+			 * Format PCI compatible strings to match against.
+			 * Try both "pciVVVV,DDDD" (standard 4-digit) and
+			 * "pciVVVV,D+" (firmware short form).
+			 */
+			char compat_long[20], compat_short[20];
+
+			snprintf(compat_long, sizeof(compat_long),
+				 "pci%04x,%04x",
+				 find_id->vendor, find_id->device);
+			snprintf(compat_short, sizeof(compat_short),
+				 "pci%04x,%x",
+				 find_id->vendor, find_id->device);
+
+			/* Search controller's own DT children first */
+			if (ctlr != parent) {
+				dev_for_each_subnode(cnode, ctlr) {
+					if (ofnode_device_is_compatible(cnode,
+								compat_long) ||
+					    ofnode_device_is_compatible(cnode,
+								compat_short)) {
+						node = cnode;
+						break;
+					}
+				}
+			}
+
+			/*
+			 * Search siblings of the controller (children of
+			 * controller's parent node, e.g. /axi/).
+			 */
+			if (!ofnode_valid(node)) {
+				ofnode pnode;
+
+				pnode = ofnode_get_parent(dev_ofnode(ctlr));
+				if (ofnode_valid(pnode)) {
+					ofnode_for_each_subnode(cnode, pnode) {
+						if (ofnode_device_is_compatible(
+							    cnode,
+							    compat_long) ||
+						    ofnode_device_is_compatible(
+							    cnode,
+							    compat_short)) {
+							node = cnode;
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if (ofnode_valid(node) && !ofnode_is_enabled(node)) {
 		debug("%s: Ignoring disabled device\n", __func__);
 		return log_msg_ret("dis", -EPERM);
@@ -1235,6 +1312,7 @@ static int pci_uclass_post_probe(struct udevice *bus)
 static int pci_uclass_child_post_bind(struct udevice *dev)
 {
 	struct pci_child_plat *pplat;
+	int err;
 
 	if (!dev_has_ofnode(dev))
 		return 0;
@@ -1242,10 +1320,20 @@ static int pci_uclass_child_post_bind(struct udevice *dev)
 	pplat = dev_get_parent_plat(dev);
 
 	/* Extract vendor id and device id if available */
-	ofnode_read_pci_vendev(dev_ofnode(dev), &pplat->vendor, &pplat->device);
+	err = ofnode_read_pci_vendev(dev_ofnode(dev), &pplat->vendor,
+				     &pplat->device);
+	if (err) {
+		/* Set invalid devfn if OF node describes not a PCI device */
+		pplat->devfn = -1;
+		return 0;
+	}
 
 	/* Extract the devfn from fdt_pci_addr */
-	pplat->devfn = pci_get_devfn(dev);
+	err = pci_get_devfn(dev);
+	if (err < 0)
+		pplat->devfn = -1;
+	else
+		pplat->devfn = err;
 
 	return 0;
 }

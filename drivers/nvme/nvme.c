@@ -17,6 +17,12 @@
 #include <linux/compat.h>
 #include "nvme.h"
 
+static inline dma_addr_t nvme_phys_to_bus(struct nvme_dev *dev,
+					  phys_addr_t addr)
+{
+	return dev_phys_to_bus(dev->udev->parent, addr);
+}
+
 #define NVME_Q_DEPTH		2
 #define NVME_AQ_DEPTH		2
 #define NVME_SQ_SIZE(depth)	(depth * sizeof(struct nvme_command))
@@ -101,8 +107,8 @@ static int nvme_setup_prps(struct nvme_dev *dev, u64 *prp2,
 			printf("Error: malloc prp_pool fail\n");
 			return -ENOMEM;
 		}
-		dev->prp_pool_dma = dev_phys_to_bus(dev->udev,
-						    (uintptr_t)dev->prp_pool);
+		dev->prp_pool_dma = nvme_phys_to_bus(dev,
+						     (uintptr_t)dev->prp_pool);
 		dev->prp_entry_num = num_pages * (prps_per_page - 1) + 1;
 	}
 
@@ -111,7 +117,7 @@ static int nvme_setup_prps(struct nvme_dev *dev, u64 *prp2,
 	while (nprps) {
 		if ((i == (prps_per_page - 1)) && nprps > 1) {
 			dma_addr_t prp_pool_dma =
-			    dev_phys_to_bus(dev->udev, (uintptr_t)prp_pool);
+			    nvme_phys_to_bus(dev, (uintptr_t)prp_pool);
 			*(prp_pool + i) = cpu_to_le64(prp_pool_dma +
 								page_size);
 			i = 0;
@@ -262,15 +268,15 @@ static struct nvme_queue *nvme_alloc_queue(struct nvme_dev *dev,
 	nvmeq->cqes = (void *)memalign(4096, NVME_CQ_ALLOCATION);
 	if (!nvmeq->cqes)
 		goto free_nvmeq;
-	nvmeq->cq_dma_addr = dev_phys_to_bus(dev->udev,
-					     (uintptr_t)nvmeq->cqes);
+	nvmeq->cq_dma_addr = nvme_phys_to_bus(dev,
+					      (uintptr_t)nvmeq->cqes);
 	memset((void *)nvmeq->cqes, 0, NVME_CQ_SIZE(depth));
 
 	nvmeq->sq_cmds = (void *)memalign(4096, NVME_SQ_SIZE(depth));
 	if (!nvmeq->sq_cmds)
 		goto free_queue;
-	nvmeq->sq_dma_addr = dev_phys_to_bus(dev->udev,
-					     (uintptr_t)nvmeq->sq_cmds);
+	nvmeq->sq_dma_addr = nvme_phys_to_bus(dev,
+					      (uintptr_t)nvmeq->sq_cmds);
 	memset((void *)nvmeq->sq_cmds, 0, NVME_SQ_SIZE(depth));
 
 	nvmeq->dev = dev;
@@ -476,7 +482,7 @@ int nvme_identify(struct nvme_dev *dev, unsigned nsid,
 {
 	struct nvme_command c;
 	u32 page_size = dev->page_size;
-	dma_addr_t dma_addr = dev_phys_to_bus(dev->udev, cpu_addr);
+	dma_addr_t dma_addr = nvme_phys_to_bus(dev, cpu_addr);
 	int offset = dma_addr & (page_size - 1);
 	int length = sizeof(struct nvme_id_ctrl);
 	int ret;
@@ -511,7 +517,7 @@ int nvme_set_features(struct nvme_dev *dev, unsigned fid, unsigned dword11,
 		      dma_addr_t cpu_addr, u32 *result)
 {
 	struct nvme_command c;
-	dma_addr_t dma_addr = dev_phys_to_bus(dev->udev, cpu_addr);
+	dma_addr_t dma_addr = nvme_phys_to_bus(dev, cpu_addr);
 
 	memset(&c, 0, sizeof(c));
 	c.features.opcode = nvme_admin_set_features;
@@ -750,7 +756,7 @@ static ulong nvme_blk_rw(struct udevice *udev, lbaint_t blknr,
 	u64 prp2;
 	u64 total_len = blkcnt << desc->log2blksz;
 	u64 temp_len = total_len;
-	uintptr_t dma_addr = dev_phys_to_bus(udev, (uintptr_t)buffer);
+	uintptr_t dma_addr = nvme_phys_to_bus(dev, (uintptr_t)buffer);
 
 	u64 slba = blknr;
 	u16 lbas = 1 << (dev->max_transfer_shift - ns->lba_shift);
@@ -866,7 +872,7 @@ int nvme_init(struct udevice *udev)
 		goto free_queue;
 	}
 
-	ndev->prp_pool_dma = dev_phys_to_bus(udev, (uintptr_t)ndev->prp_pool);
+	ndev->prp_pool_dma = nvme_phys_to_bus(ndev, (uintptr_t)ndev->prp_pool);
 	ndev->prp_entry_num = MAX_PRP_POOL >> 3;
 
 	ret = nvme_setup_io_queues(ndev);

@@ -26,6 +26,8 @@
 #include <watchdog.h>
 #include <dm/pinctrl.h>
 #include <dm/ofnode.h>
+#include <dm/device-internal.h>
+#include <dm/uclass.h>
 #include <acpi/acpi_table.h>
 #include <acpi/acpigen.h>
 #include <dm/lists.h>
@@ -668,6 +670,31 @@ int ft_board_setup(void *blob, struct bd_info *bd)
 
 	return 0;
 }
+
+#ifdef CONFIG_BCM2712
+int board_late_init(void)
+{
+	struct udevice *dev;
+	int err;
+
+	err = dm_pci_find_device(PCI_VENDOR_ID_RPI, PCI_DEVICE_ID_RP1_C0,
+				 0, &dev);
+	if (err) {
+		printf("RPI: RP1 device not found\n");
+		return 0;
+	}
+
+	err = device_probe(dev);
+	if (err) {
+		printf("RPI: Failed to probe RP1 device: %d\n", err);
+		return err;
+	}
+
+	printf("RPI: RP1 initialized successfully\n");
+
+	return 0;
+}
+#endif
 
 #if CONFIG_IS_ENABLED(GENERATE_ACPI_TABLE)
 static bool is_rpi4(void)
