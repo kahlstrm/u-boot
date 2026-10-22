@@ -389,6 +389,7 @@ static int usb_parse_config(struct usb_device *dev,
 	int index, ifno, epno, curr_if_num;
 	u16 ep_wMaxPacketSize;
 	struct usb_interface *if_desc = NULL;
+	bool other_altsetting = false;
 
 	ifno = -1;
 	epno = -1;
@@ -425,6 +426,8 @@ static int usb_parse_config(struct usb_device *dev,
 				puts("USB IF descriptor overflowed buffer!\n");
 				break;
 			}
+			other_altsetting = ((struct usb_interface_descriptor *)
+					    head)->bAlternateSetting != 0;
 			if (((struct usb_interface_descriptor *) \
 			     head)->bInterfaceNumber != curr_if_num) {
 				/* this is a new interface, copy new desc */
@@ -466,6 +469,12 @@ static int usb_parse_config(struct usb_device *dev,
 				puts("Endpoint descriptor out of order!\n");
 				break;
 			}
+			/*
+			 * SET_CONFIGURATION selects alternate setting 0, and
+			 * drivers and host controllers use only its endpoints.
+			 */
+			if (other_altsetting)
+				break;
 			epno = dev->config.if_desc[ifno].no_of_ep;
 			if_desc = &dev->config.if_desc[ifno];
 			if (epno >= USB_MAXENDPOINTS) {
@@ -503,6 +512,8 @@ static int usb_parse_config(struct usb_device *dev,
 				puts("EPC descriptor out of order!\n");
 				break;
 			}
+			if (other_altsetting)
+				break;
 			if_desc = &dev->config.if_desc[ifno];
 			memcpy(&if_desc->ss_ep_comp_desc[epno], head,
 				USB_DT_SS_EP_COMP_SIZE);

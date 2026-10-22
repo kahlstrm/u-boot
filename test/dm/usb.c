@@ -255,6 +255,72 @@ static int dm_test_usb_flash(struct unit_test_state *uts)
 }
 DM_TEST(dm_test_usb_flash, UTF_SCAN_PDATA | UTF_SCAN_FDT);
 
+static int check_usb_alternate_setting(struct unit_test_state *uts,
+				       struct udevice *keyb, u8 ep_address)
+{
+	struct udevice *dev, *emul, *found = NULL;
+	struct usb_interface *iface;
+	struct uclass *uc;
+
+	ut_assertok(uclass_get(UCLASS_KEYBOARD, &uc));
+	uclass_foreach_dev(dev, uc) {
+		/* Other keyboards, such as cros-ec-keyb, are not USB devices */
+		if (device_get_uclass_id(dev->parent) != UCLASS_USB_HUB)
+			continue;
+		ut_assertok(usb_emul_find_for_dev(dev, &emul));
+		if (emul == keyb)
+			found = dev;
+	}
+	ut_assertnonnull(found);
+	iface = usb_get_interface(usb_get_device(found), 1);
+	ut_asserteq(2, iface->num_altsetting);
+	ut_asserteq(1, iface->no_of_ep);
+	ut_asserteq(ep_address,
+		    usb_get_endpoint_desc(iface, 0)->bEndpointAddress);
+
+	return 0;
+}
+
+/* Only the endpoints of alternate setting 0 are recorded */
+static int dm_test_usb_alternate_setting(struct unit_test_state *uts)
+{
+	struct usb_generic_descriptor *descriptors[12];
+	struct usb_endpoint_descriptor alt_ep, extra_ep;
+	struct usb_interface_descriptor alt;
+	struct usb_config_descriptor config;
+	struct usb_dev_plat *plat;
+	struct udevice *keyb;
+	int i, ret;
+
+	ut_assertok(uclass_find_device_by_name(UCLASS_USB_EMUL, "keyb@3", &keyb));
+	plat = dev_get_parent_plat(keyb);
+	for (i = 0; plat->desc_list[i]; i++)
+		descriptors[i] = plat->desc_list[i];
+	ut_asserteq(8, i);
+	/* usb_emul_setup_device() rewrites wTotalLength; keep the original */
+	memcpy(&config, descriptors[1], sizeof(config));
+	descriptors[1] = (struct usb_generic_descriptor *)&config;
+	memcpy(&alt, descriptors[5], sizeof(alt));
+	alt.bAlternateSetting = 1;
+	alt.bNumEndpoints = 2;
+	memcpy(&alt_ep, descriptors[7], sizeof(alt_ep));
+	extra_ep = alt_ep;
+	extra_ep.bEndpointAddress = USB_DIR_IN | 5;
+	descriptors[8] = (struct usb_generic_descriptor *)&alt;
+	descriptors[9] = (struct usb_generic_descriptor *)&alt_ep;
+	descriptors[10] = (struct usb_generic_descriptor *)&extra_ep;
+	descriptors[11] = NULL;
+	ut_assertok(usb_emul_setup_device(keyb, plat->strings,
+					  (void **)descriptors));
+	state_set_skip_delays(true);
+	ut_assertok(usb_init());
+	ret = check_usb_alternate_setting(uts, keyb, alt_ep.bEndpointAddress);
+	ut_assertok(usb_stop());
+
+	return ret;
+}
+DM_TEST(dm_test_usb_alternate_setting, UTF_SCAN_PDATA | UTF_SCAN_FDT);
+
 /* test that we can handle multiple storage devices */
 static int dm_test_usb_multi(struct unit_test_state *uts)
 {
