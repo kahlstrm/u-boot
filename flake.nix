@@ -119,12 +119,13 @@
           }
           ''
             truncate -s 64M part.img
-            mkfs.vfat -F 32 -n LAUNCHER part.img
+            # A fixed volume ID and timestamps keep the image reproducible.
+            mkfs.vfat -F 32 -n LAUNCHER -i 4c41554e --invariant part.img
             mcopy -s -i part.img ${rpi5BootFiles}/* ::/
             mcopy -i part.img ${./jetkvm/rpi5/config.txt} ::/config.txt
             mcopy -i part.img ${rpi5UBoot}/u-boot.bin ::/u-boot.bin
             truncate -s 65M "$out"
-            echo 'start=2048, type=c' | sfdisk --quiet "$out"
+            printf 'label: dos\nlabel-id: 0x4c41554e\nstart=2048, type=c\n' | sfdisk --quiet "$out"
             dd if=part.img of="$out" bs=1M seek=1 conv=notrunc status=none
           '';
 
