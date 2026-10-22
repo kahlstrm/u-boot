@@ -15,15 +15,15 @@
   },
   "branch": {
     "stock": {
-      "disk": false,
+      "disk": true,
       "keyboard": true,
       "keyboard_with_idle_reports": true,
-      "disk_after_reset": false
+      "disk_after_reset": true
     },
     "storage-first": {
       "disk": true,
-      "keyboard": false,
-      "keyboard_with_idle_reports": false,
+      "keyboard": true,
+      "keyboard_with_idle_reports": true,
       "disk_after_reset": true
     }
   }
