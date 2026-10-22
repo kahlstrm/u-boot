@@ -487,6 +487,7 @@ static int usb_kbd_probe_dev(struct usb_device *dev, unsigned int ifnum)
 	struct usb_endpoint_descriptor *ep;
 	struct usb_kbd_pdata *data;
 	unsigned int quirks = 0;
+	int __maybe_unused ret;
 	int epNum;
 
 	if (dev->descriptor.bNumConfigurations != 1)
@@ -586,8 +587,13 @@ static int usb_kbd_probe_dev(struct usb_device *dev, unsigned int ifnum)
 	if (usb_get_report(dev, iface->desc.bInterfaceNumber,
 			   1, 0, data->new, USB_KBD_BOOT_REPORT_SIZE) < 0) {
 #else
-	if (usb_int_msg(dev, data->intpipe, data->new, data->intpktsize,
-			data->intinterval, false) < 0) {
+	ret = usb_int_msg(dev, data->intpipe, data->new, data->intpktsize,
+			  data->intinterval, false);
+	/*
+	 * Keyboards that ignore SET_IDLE, such as Linux USB gadgets, only
+	 * report key presses, so a timeout means idle rather than broken.
+	 */
+	if (ret < 0 && ret != -ETIMEDOUT) {
 #endif
 		printf("Failed to get keyboard state from device %04x:%04x\n",
 		       dev->descriptor.idVendor, dev->descriptor.idProduct);
