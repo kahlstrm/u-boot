@@ -50,13 +50,13 @@ def send_idle_reports(stop):
 
 
 class UBoot:
-    def __init__(self, u_boot):
+    def __init__(self, u_boot, controller):
         self.qemu = pexpect.spawn(
             "qemu-system-aarch64",
             ["-M", "virt", "-cpu", "cortex-a57", "-m", "512", "-nographic", "-nic", "none",
              "-bios", u_boot,
-             "-device", "qemu-xhci,id=xhci",
-             "-device", "usb-host,bus=xhci.0,vendorid=0x1d6b,productid=0x0104"],
+             "-device", f"{controller},id=hc",
+             "-device", "usb-host,bus=hc.0,vendorid=0x1d6b,productid=0x0104"],
             encoding="utf-8", timeout=120, logfile=sys.stdout, codec_errors="replace",
         )
         self.qemu.expect("Hit any key to stop autoboot")
@@ -88,8 +88,8 @@ class UBoot:
         return typed
 
 
-def main(u_boot):
-    u = UBoot(u_boot)
+def main(u_boot, controller):
+    u = UBoot(u_boot, controller)
     result = {}
 
     # The gadget attaches after U-Boot's boot-time scan, so always rescan.
@@ -111,9 +111,9 @@ def main(u_boot):
     u.qemu.terminate(force=True)
 
     print("RESULT " + json.dumps(result))
-    with open(sys.argv[2], "w") as f:
+    with open(sys.argv[3], "w") as f:
         json.dump(result, f)
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2])

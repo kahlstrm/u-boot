@@ -1,11 +1,20 @@
 # Creates a composite USB gadget matching a JetKVM on dummy_hcd with interfaces in argument order.
-# Usage: jetkvm-gadget <function>... (keyboard mouse_abs mouse_rel wake storage)
+# Usage: jetkvm-gadget <function>... (keyboard mouse_abs mouse_rel wake altsetting storage)
 # HID functions are always created in the same order, so /dev/hidg0 is the keyboard.
 
 gadget=/sys/kernel/config/usb_gadget/jetkvm
 disk=/var/lib/jetkvm-disk.img
 
 hex() { printf '%b' "$(sed 's/ //g; s/\(..\)/\\x\1/g' <<<"$1")"; }
+
+# A function whose data interface has alternate settings, like JetKVM's
+# optional audio. Audio itself needs isochronous endpoints, which dummy_hcd
+# cannot provide; NCM's data interface has an empty setting 0 and a bulk
+# setting 1.
+altsetting() {
+  mkdir "$gadget/functions/ncm.altsetting"
+  ln -s "$gadget/functions/ncm.altsetting" "$gadget/configs/c.1/"
+}
 
 hid() {
   local name=$1 subclass=$2 protocol=$3 length=$4 no_out=$5 descriptor=$6
@@ -49,6 +58,7 @@ echo "$disk" >"$gadget/functions/mass_storage.storage/lun.0/file"
 for function in "$@"; do
   case $function in
     storage) ln -s "$gadget/functions/mass_storage.storage" "$gadget/configs/c.1/" ;;
+    altsetting) altsetting ;;
     *) ln -s "$gadget/functions/hid.$function" "$gadget/configs/c.1/" ;;
   esac
 done

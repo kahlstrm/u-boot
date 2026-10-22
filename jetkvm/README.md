@@ -30,8 +30,14 @@ nix build -L .#checks.x86_64-linux.branch-stock       # one combination
 ```
 
 - Variants: `upstream` (the release this branch is based on) and `branch` (this tree).
-- Layouts: `stock` (JetKVM order, storage last) and `storage-first` (kahlstrm/kvm).
+- Controllers: `xhci` (`qemu-xhci`) and `ehci` (`usb-ehci`).
+- Layouts: `stock` (JetKVM order, storage last), `storage-first` (kahlstrm/kvm),
+  and `stock-altsetting` (with a function that has alternate settings before the
+  storage, as with JetKVM's optional audio; NCM stands in, since `dummy_hcd`
+  cannot provide audio's isochronous endpoints).
 - [expected.json](expected.json) records what each combination can use: read the
   FAT disk, type on the keyboard, the keyboard with periodic idle reports (which
   Linux's HID gadget does not send), and the disk after `usb reset`. Update it in
-  the same commit as a fix that changes a result.
+  the same commit as a fix that changes a result. `null` leaves a result
+  unchecked; upstream's EHCI keyboard after `usb reset` with alternate settings
+  varies between runs, because upstream EHCI leaks interrupt queues on timeout.

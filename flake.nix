@@ -69,20 +69,36 @@
           "mouse_rel"
           "wake"
         ];
+        # With a function that has alternate settings before the storage, as
+        # with JetKVM's optional audio.
+        stock-altsetting = [
+          "keyboard"
+          "mouse_abs"
+          "mouse_rel"
+          "wake"
+          "altsetting"
+          "storage"
+        ];
+      };
+
+      controllers = {
+        xhci = "qemu-xhci";
+        ehci = "usb-ehci";
       };
 
       expected = lib.importJSON ./jetkvm/expected.json;
 
       check =
-        variant: layout:
+        variant: controller: layout:
         pkgs.testers.runNixOSTest {
-          name = "u-boot-usb-${variant}-${layout}";
+          name = "u-boot-usb-${variant}-${controller}-${layout}";
           nodes.machine = {
             virtualisation.memorySize = 2048;
             virtualisation.cores = 2;
             boot.kernelModules = [
               "libcomposite"
               "dummy_hcd"
+              "usb_f_ncm"
             ];
             environment.systemPackages = [
               pkgs.qemu
@@ -105,10 +121,16 @@
             import json
             machine.wait_for_unit("multi-user.target")
             machine.succeed("jetkvm-gadget ${lib.concatStringsSep " " layouts.${layout}}")
-            machine.succeed("uboot-usb-check ${variants.${variant}}/u-boot.bin /tmp/result.json >&2")
+            machine.succeed("uboot-usb-check ${variants.${variant}}/u-boot.bin ${
+              controllers.${controller}
+            } /tmp/result.json >&2")
             result = json.loads(machine.succeed("cat /tmp/result.json"))
-            expected = json.loads('${builtins.toJSON expected.${variant}.${layout}}')
-            assert result == expected, f"expected {expected}, got {result}"
+            expected = json.loads('${builtins.toJSON (expected.${variant}.${controller}.${layout} or null)}')
+            assert expected is not None, f"no expectation recorded, got {result}"
+            # null marks a result that is not checked (see jetkvm/README.md)
+            assert result.keys() == expected.keys(), f"expected {expected}, got {result}"
+            mismatches = {k: v for k, v in result.items() if expected[k] is not None and expected[k] != v}
+            assert not mismatches, f"expected {expected}, got {result}"
           '';
         };
     in
@@ -117,7 +139,12 @@
       checks.${system} = lib.listToAttrs (
         lib.concatMap (
           variant:
-          map (layout: lib.nameValuePair "${variant}-${layout}" (check variant layout)) (lib.attrNames layouts)
+          lib.concatMap (
+            controller:
+            map (
+              layout: lib.nameValuePair "${variant}-${controller}-${layout}" (check variant controller layout)
+            ) (lib.attrNames layouts)
+          ) (lib.attrNames controllers)
         ) (lib.attrNames variants)
       );
     };
