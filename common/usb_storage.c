@@ -195,6 +195,7 @@ static int usb_stor_probe_device(struct udevice *dev, struct usb_device *udev)
 	int lun, max_lun;
 
 #if CONFIG_IS_ENABLED(BLK)
+	struct usb_dev_plat *plat;
 	struct us_data *data;
 	int ret;
 #else
@@ -212,7 +213,8 @@ static int usb_stor_probe_device(struct udevice *dev, struct usb_device *udev)
 	 * device.
 	 */
 	data = dev_get_plat(dev);
-	if (!usb_storage_probe(udev, 0, data))
+	plat = dev_get_parent_plat(dev);
+	if (!usb_storage_probe(udev, plat->ifnum, data))
 		return 0;
 	max_lun = usb_get_max_lun(data);
 	for (lun = 0; lun <= max_lun; lun++) {

@@ -521,6 +521,13 @@ struct usb_device_id {
 #define USB_DEVICE_ID_MATCH_INT_PROTOCOL	0x0200
 #define USB_DEVICE_ID_MATCH_INT_NUMBER		0x0400
 
+/* Flags that match against an interface rather than the whole device */
+#define USB_DEVICE_ID_MATCH_INTERFACE \
+		(USB_DEVICE_ID_MATCH_INT_CLASS | \
+		 USB_DEVICE_ID_MATCH_INT_SUBCLASS | \
+		 USB_DEVICE_ID_MATCH_INT_PROTOCOL | \
+		 USB_DEVICE_ID_MATCH_INT_NUMBER)
+
 /* Match anything, indicates this is a valid entry even if everything is 0 */
 #define USB_DEVICE_ID_MATCH_NONE		0x0800
 #define USB_DEVICE_ID_MATCH_ALL			0x07ff
@@ -655,6 +662,8 @@ struct usb_dev_plat {
 	 * This should eventually go away.
 	 */
 	struct usb_device *udev;
+	/* Interface this driver is bound to; 0 unless the device is composite */
+	unsigned int ifnum;
 #ifdef CONFIG_SANDBOX
 	struct usb_string *strings;
 	/* NULL-terminated list of descriptor pointers */
@@ -898,10 +907,24 @@ struct udevice *usb_get_bus(struct udevice *dev);
  * parent data, but its USB fields are not initialized until that hook succeeds.
  * This function does not allocate or initialize state.
  *
+ * The functions of a composite device share the state of their usb_composite
+ * parent.
+ *
  * Return: USB state allocated by the parent bus or hub for @dev, or NULL if
  * parent data has not been allocated or has been freed
  */
 struct usb_device *usb_get_device(struct udevice *dev);
+
+/**
+ * usb_is_composite() - Check whether a device is a composite USB device
+ * @dev: Device to check, or NULL
+ *
+ * A composite device holds the USB state of a device with several functions;
+ * the driver for each function is bound to one interface as its child.
+ *
+ * Return: true if @dev is a usb_composite device
+ */
+bool usb_is_composite(const struct udevice *dev);
 
 /**
  * usb_select_config() - Set up a device ready for use

@@ -28,6 +28,9 @@ struct usb_uclass_priv {
 
 struct usb_device *usb_get_device(struct udevice *dev)
 {
+	if (usb_is_composite(dev_get_parent(dev)))
+		dev = dev_get_parent(dev);
+
 	return dev_get_parent_priv(dev);
 }
 
@@ -642,52 +645,74 @@ static ofnode usb_get_ofnode(struct udevice *hub, int port)
  *
  * This only looks at certain fields in the descriptor.
  */
+/*
+ * We could pass the descriptor to the driver as plat (instead of NULL) and
+ * allow its bind() method to return -ENOENT if it doesn't support this device.
+ * That way we could continue the search to find another driver. For now this
+ * doesn't seem necesssary, so just use the first match.
+ */
+static const struct usb_device_id *
+usb_find_driver(struct usb_device_descriptor *desc,
+		struct usb_interface_descriptor *iface,
+		const struct driver **drvp)
+{
+	struct usb_driver_entry *start, *entry;
+	const struct usb_device_id *id;
+	int n_ents;
+
+	start = ll_entry_start(struct usb_driver_entry, usb_driver_entry);
+	n_ents = ll_entry_count(struct usb_driver_entry, usb_driver_entry);
+	for (entry = start; entry != start + n_ents; entry++) {
+		for (id = entry->match; id->match_flags; id++) {
+			if (usb_match_one_id(desc, iface, id)) {
+				*drvp = entry->driver;
+				return id;
+			}
+		}
+	}
+
+	return NULL;
+}
+
+static int usb_bind_driver(struct udevice *parent, const struct driver *drv,
+			   const struct usb_device_id *id, ofnode node,
+			   unsigned int ifnum, struct udevice **devp)
+{
+	struct usb_dev_plat *plat;
+	int ret;
+
+	ret = device_bind(parent, drv, drv->name, NULL, node, devp);
+	if (ret)
+		return ret;
+	debug("%s: Match found: %s\n", __func__, drv->name);
+	(*devp)->driver_data = id->driver_info;
+	plat = dev_get_parent_plat(*devp);
+	plat->id = *id;
+	plat->ifnum = ifnum;
+
+	return 0;
+}
+
 static int usb_find_and_bind_driver(struct udevice *parent,
 				    struct usb_device_descriptor *desc,
 				    struct usb_interface_descriptor *iface,
 				    int bus_seq, int devnum, int port,
 				    struct udevice **devp)
 {
-	struct usb_driver_entry *start, *entry;
-	int n_ents;
+	const struct usb_device_id *id;
+	const struct driver *drv;
 	int ret;
 	char name[34], *str;
-	ofnode node = usb_get_ofnode(parent, port);
 
 	*devp = NULL;
 	debug("%s: Searching for driver\n", __func__);
-	start = ll_entry_start(struct usb_driver_entry, usb_driver_entry);
-	n_ents = ll_entry_count(struct usb_driver_entry, usb_driver_entry);
-	for (entry = start; entry != start + n_ents; entry++) {
-		const struct usb_device_id *id;
-		struct udevice *dev;
-		const struct driver *drv;
-		struct usb_dev_plat *plat;
-
-		for (id = entry->match; id->match_flags; id++) {
-			if (!usb_match_one_id(desc, iface, id))
-				continue;
-
-			drv = entry->driver;
-			/*
-			 * We could pass the descriptor to the driver as
-			 * plat (instead of NULL) and allow its bind()
-			 * method to return -ENOENT if it doesn't support this
-			 * device. That way we could continue the search to
-			 * find another driver. For now this doesn't seem
-			 * necesssary, so just bind the first match.
-			 */
-			ret = device_bind(parent, drv, drv->name, NULL, node,
-					  &dev);
-			if (ret)
-				goto error;
-			debug("%s: Match found: %s\n", __func__, drv->name);
-			dev->driver_data = id->driver_info;
-			plat = dev_get_parent_plat(dev);
-			plat->id = *id;
-			*devp = dev;
-			return 0;
-		}
+	id = usb_find_driver(desc, iface, &drv);
+	if (id) {
+		ret = usb_bind_driver(parent, drv, id,
+				      usb_get_ofnode(parent, port), 0, devp);
+		if (ret)
+			goto error;
+		return 0;
 	}
 
 	/* Bind a generic driver so that the device can be used */
@@ -702,6 +727,37 @@ static int usb_find_and_bind_driver(struct udevice *parent,
 error:
 	debug("%s: No match found: %d\n", __func__, ret);
 	return ret;
+}
+
+/*
+ * A device whose class is defined per interface is composite when a driver
+ * matches an interface other than the first, unless a driver claims the whole
+ * device. Other devices get a single driver, matched against the first
+ * interface.
+ */
+static bool usb_is_composite_device(struct usb_device *udev)
+{
+	const struct usb_device_id *id;
+	const struct driver *drv;
+	unsigned int ifnum;
+
+	if (udev->descriptor.bDeviceClass || udev->config.no_of_if < 2)
+		return false;
+
+	id = usb_find_driver(&udev->descriptor,
+			     usb_get_interface_desc(usb_get_interface(udev, 0)),
+			     &drv);
+	if (id && !(id->match_flags & USB_DEVICE_ID_MATCH_INTERFACE))
+		return false;
+
+	for (ifnum = 1; ifnum < udev->config.no_of_if; ifnum++) {
+		if (usb_find_driver(&udev->descriptor,
+				    usb_get_interface_desc(usb_get_interface(udev, ifnum)),
+				    &drv))
+			return true;
+	}
+
+	return false;
 }
 
 /**
@@ -798,10 +854,14 @@ int usb_scan_device(struct udevice *parent, int port,
 	if (ret) {
 		if (ret != -ENOENT)
 			return ret;
-		ret = usb_find_and_bind_driver(parent, &udev->descriptor,
-					       iface,
-					       dev_seq(udev->controller_dev),
-					       udev->devnum, port, &dev);
+		if (usb_is_composite_device(udev))
+			ret = device_bind_driver(parent, "usb_composite",
+						 "usb_composite", &dev);
+		else
+			ret = usb_find_and_bind_driver(parent, &udev->descriptor,
+						       iface,
+						       dev_seq(udev->controller_dev),
+						       udev->devnum, port, &dev);
 		if (ret)
 			return ret;
 		created = true;
@@ -965,3 +1025,53 @@ U_BOOT_DRIVER(usb_dev_generic_drv) = {
 	.id		= UCLASS_USB_DEV_GENERIC,
 	.name		= "usb_dev_generic_drv",
 };
+
+/* Bind and probe a driver for each interface that one matches */
+static int usb_composite_probe(struct udevice *dev)
+{
+	struct usb_device *udev = usb_get_device(dev);
+	unsigned int ifnum;
+
+	for (ifnum = 0; ifnum < udev->config.no_of_if; ifnum++) {
+		const struct usb_device_id *id;
+		struct usb_dev_plat *plat;
+		const struct driver *drv;
+		struct udevice *child;
+		int ret;
+
+		id = usb_find_driver(&udev->descriptor,
+				     usb_get_interface_desc(usb_get_interface(udev, ifnum)),
+				     &drv);
+		if (!id)
+			continue;
+
+		ret = usb_bind_driver(dev, drv, id, ofnode_null(), ifnum,
+				      &child);
+		if (ret)
+			return ret;
+		plat = dev_get_parent_plat(child);
+		plat->devnum = udev->devnum;
+
+		/* A function that fails to probe must not hide the others */
+		ret = device_probe(child);
+		if (ret) {
+			log_debug("Interface %u of '%s' failed: %d\n", ifnum,
+				  dev->name, ret);
+			device_unbind(child);
+		}
+	}
+
+	return 0;
+}
+
+U_BOOT_DRIVER(usb_composite) = {
+	.id		= UCLASS_USB_DEV_GENERIC,
+	.name		= "usb_composite",
+	.probe		= usb_composite_probe,
+	.per_child_plat_auto	= sizeof(struct usb_dev_plat),
+};
+
+bool usb_is_composite(const struct udevice *dev)
+{
+	return dev && dev->driver == DM_DRIVER_GET(usb_composite);
+}
