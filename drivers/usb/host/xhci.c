@@ -606,8 +606,6 @@ static int xhci_set_configuration(struct usb_device *udev)
 	struct xhci_virt_device *virt_dev = ctrl->devs[slot_id];
 	struct usb_interface *ifdesc;
 	unsigned int ifnum;
-	unsigned int max_ifnum = min((unsigned int)USB_MAX_ACTIVE_INTERFACES,
-				     (unsigned int)udev->config.no_of_if);
 
 	out_ctx = virt_dev->out_ctx;
 	in_ctx = virt_dev->in_ctx;
@@ -617,7 +615,7 @@ static int xhci_set_configuration(struct usb_device *udev)
 	ctrl_ctx->add_flags = cpu_to_le32(SLOT_FLAG);
 	ctrl_ctx->drop_flags = 0;
 
-	for (ifnum = 0; ifnum < max_ifnum; ifnum++) {
+	for (ifnum = 0; ifnum < udev->config.no_of_if; ifnum++) {
 		ifdesc = usb_get_interface(udev, ifnum);
 		num_of_ep = ifdesc->no_of_ep;
 		/* EP_FLAG gives values 1 & 4 for EP1OUT and EP2IN */
@@ -640,7 +638,7 @@ static int xhci_set_configuration(struct usb_device *udev)
 	xhci_endpoint_copy(ctrl, in_ctx, out_ctx, 0);
 
 	/* filling up ep contexts */
-	for (ifnum = 0; ifnum < max_ifnum; ifnum++) {
+	for (ifnum = 0; ifnum < udev->config.no_of_if; ifnum++) {
 		ifdesc = usb_get_interface(udev, ifnum);
 		err = xhci_init_ep_contexts_if(udev, ctrl, virt_dev, ifdesc);
 		if (err < 0)
