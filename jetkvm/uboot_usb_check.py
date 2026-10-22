@@ -94,6 +94,7 @@ def main(u_boot):
 
     # The gadget attaches after U-Boot's boot-time scan, so always rescan.
     u.run("usb reset")
+    u.run("usb info")
     result["disk"] = u.reads_disk()
     result["keyboard"] = u.keyboard_bound() and u.keyboard_types()
 
