@@ -79,6 +79,10 @@
         version = "2026.10-jetkvm";
         src = variants.branch.src;
         defconfig = "rpi_arm64_defconfig";
+        # Talos writes its boot entries through efivarfs during installs and upgrades.
+        extraConfig = ''
+          CONFIG_EFI_RT_VOLATILE_STORE=y
+        '';
         extraMeta.platforms = [ "aarch64-linux" ];
         filesToInstall = [ "u-boot.bin" ];
       };
