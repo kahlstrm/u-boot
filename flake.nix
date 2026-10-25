@@ -140,7 +140,16 @@
             truncate -s 64M part.img
             # A fixed volume ID and timestamps keep the image reproducible.
             mkfs.vfat -F 32 -n LAUNCHER -i 4c41554e --invariant part.img
-            mcopy -s -i part.img ${rpi5BootFiles}/* ::/
+            # Copy in sorted order: mcopy -s follows the build host's directory order.
+            (
+              cd ${rpi5BootFiles}
+              find . -mindepth 1 -type d | LC_ALL=C sort | while read -r dir; do
+                mmd -i "$OLDPWD/part.img" "::/''${dir#./}"
+              done
+              find . -type f | LC_ALL=C sort | while read -r file; do
+                mcopy -i "$OLDPWD/part.img" "$file" "::/''${file#./}"
+              done
+            )
             mcopy -i part.img ${./jetkvm/rpi5/config.txt} ::/config.txt
             mcopy -i part.img ${rpi5UBoot}/u-boot.bin ::/u-boot.bin
             truncate -s 65M "$out"
